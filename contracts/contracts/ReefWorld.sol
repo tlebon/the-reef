@@ -10,7 +10,6 @@ contract ReefWorld {
     address public operator;
 
     struct TickCommit {
-        uint256 tickNumber;
         bytes32 stateHash;
         uint256 blockNumber;
         uint256 timestamp;
@@ -20,6 +19,7 @@ contract ReefWorld {
     mapping(uint256 => TickCommit) public ticks;
 
     event TickCommitted(uint256 indexed tickNumber, bytes32 stateHash, uint256 blockNumber);
+    event OperatorTransferred(address indexed oldOperator, address indexed newOperator);
 
     modifier onlyOperator() {
         require(msg.sender == operator, "ReefWorld: not operator");
@@ -39,7 +39,6 @@ contract ReefWorld {
         require(tickNumber == latestTick + 1, "ReefWorld: tick must be sequential");
 
         ticks[tickNumber] = TickCommit({
-            tickNumber: tickNumber,
             stateHash: stateHash,
             blockNumber: block.number,
             timestamp: block.timestamp
@@ -54,6 +53,7 @@ contract ReefWorld {
      * @notice Verify a state hash for a given tick.
      */
     function verifyTick(uint256 tickNumber, bytes32 stateHash) external view returns (bool) {
+        require(tickNumber >= 1 && tickNumber <= latestTick, "ReefWorld: tick does not exist");
         return ticks[tickNumber].stateHash == stateHash;
     }
 
@@ -62,6 +62,8 @@ contract ReefWorld {
      */
     function transferOperator(address newOperator) external onlyOperator {
         require(newOperator != address(0), "ReefWorld: zero address");
+        address old = operator;
         operator = newOperator;
+        emit OperatorTransferred(old, newOperator);
     }
 }
