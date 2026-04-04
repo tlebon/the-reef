@@ -27,7 +27,7 @@ export default function App() {
   const [latestBlock, setLatestBlock] = useState(null);
   const [joining, setJoining] = useState(false);
   const [completedQuest, setCompletedQuest] = useState(null);
-  const { wallet, connecting, error: walletError, savedAddress, connectMetaMask, createWallet, disconnect } = useWallet();
+  const { wallet, connecting, error: walletError, connectMetaMask, createWallet, disconnect } = useWallet();
   const [newWalletKey, setNewWalletKey] = useState(null);
 
   useEffect(() => {
@@ -145,7 +145,6 @@ export default function App() {
       }}
       connecting={connecting}
       walletError={walletError}
-      savedAddress={savedAddress}
     />;
   }
 

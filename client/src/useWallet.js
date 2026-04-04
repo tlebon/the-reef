@@ -89,6 +89,5 @@ export function useWallet() {
     connectMetaMask,
     createWallet,
     disconnect,
-    isConnected: !!wallet,
   };
 }

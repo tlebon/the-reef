@@ -60,32 +60,36 @@ describe('World', () => {
 
   describe('wallet integration', () => {
     it('stores owner wallet on addAgent', () => {
-      const result = world.addAgent('a1', 'Alice', 'builder', { ownerWallet: '0x1234567890abcdef1234567890abcdef12345678' });
-      assert.equal(result.agent.ownerWallet, '0x1234567890abcdef1234567890abcdef12345678');
+      const addr = '0x1234567890abcdef1234567890abcdef12345678';
+      const result = world.addAgent('a1', 'Alice', 'builder', { ownerWallet: addr });
+      assert.equal(result.agent.ownerWallet, addr);
     });
 
     it('finds agent by owner wallet', () => {
-      world.addAgent('a1', 'Alice', 'builder', { ownerWallet: '0xaaaa' });
-      const found = world.getAgentByWallet('0xaaaa');
+      const addr = '0xaabbccddee11223344556677889900aabbccddee';
+      world.addAgent('a1', 'Alice', 'builder', { ownerWallet: addr });
+      const found = world.getAgentByWallet(addr);
       assert.equal(found.name, 'Alice');
     });
 
     it('finds agent by delegate wallet', () => {
-      world.addAgent('a1', 'Alice', 'builder', { delegateWallet: '0xbbbb' });
-      const found = world.getAgentByWallet('0xbbbb');
+      const addr = '0x1111111111222222222233333333334444444444';
+      world.addAgent('a1', 'Alice', 'builder', { delegateWallet: addr });
+      const found = world.getAgentByWallet(addr);
       assert.equal(found.name, 'Alice');
     });
 
     it('returns null for unknown wallet', () => {
-      world.addAgent('a1', 'Alice', 'builder', { ownerWallet: '0xaaaa' });
-      assert.equal(world.getAgentByWallet('0xcccc'), null);
+      world.addAgent('a1', 'Alice', 'builder', { ownerWallet: '0xaabbccddee11223344556677889900aabbccddee' });
+      assert.equal(world.getAgentByWallet('0x0000000000000000000000000000000000000000'), null);
     });
 
     it('linkDelegate sets delegate wallet', () => {
+      const addr = '0x5555555555666666666677777777778888888888';
       world.addAgent('a1', 'Alice', 'builder');
-      const result = world.linkDelegate('a1', '0xdddd');
+      const result = world.linkDelegate('a1', addr);
       assert.ok(result.ok);
-      assert.equal(world.getAgent('a1').delegateWallet, '0xdddd');
+      assert.equal(world.getAgent('a1').delegateWallet, addr);
     });
 
     it('linkDelegate rejects empty wallet', () => {
@@ -95,13 +99,13 @@ describe('World', () => {
     });
 
     it('linkDelegate rejects unknown agent', () => {
-      const result = world.linkDelegate('nonexistent', '0xdddd');
+      const result = world.linkDelegate('nonexistent', '0x5555555555666666666677777777778888888888');
       assert.ok(result.error);
     });
 
     it('wallet lookup is case-insensitive', () => {
-      world.addAgent('a1', 'Alice', 'builder', { ownerWallet: '0xAABBCC' });
-      const found = world.getAgentByWallet('0xaabbcc');
+      world.addAgent('a1', 'Alice', 'builder', { ownerWallet: '0xAABBCCDDEE11223344556677889900AABBCCDDEE' });
+      const found = world.getAgentByWallet('0xaabbccddee11223344556677889900aabbccddee');
       assert.equal(found.name, 'Alice');
     });
   });
