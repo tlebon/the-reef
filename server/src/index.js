@@ -486,6 +486,7 @@ io.on('connection', (socket) => {
     const agent = world.getAgent(agentId);
     if (agent && agent.ownerWallet?.toLowerCase() === walletAddress?.toLowerCase()) {
       socket.agentId = agentId;
+      payments.syncBalance(agentId).catch(() => {});
       console.log(`  Claim: success — socket.agentId set to ${agentId}`);
 
       // Mint NFT if missing
