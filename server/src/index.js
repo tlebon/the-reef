@@ -102,7 +102,17 @@ app.get('/api/services/:agentName/:serviceName',
     if (middleware) {
       return middleware(req, res, next);
     }
-    next(); // No Circle config — skip payment
+    // No Circle config — require server-side balance via wallet query param
+    const buyerWallet = req.query.wallet;
+    if (!buyerWallet) {
+      return res.status(402).json({ error: 'Payment required. Provide ?wallet= or configure Circle nanopayments.' });
+    }
+    const buyer = world.getAgentByWallet(buyerWallet);
+    if (!buyer || (buyer.balance || 0) < service.price) {
+      return res.status(402).json({ error: 'Insufficient balance' });
+    }
+    req.buyerAgent = buyer;
+    next();
   },
   (req, res) => {
     const agent = [...world.agents.values()].find(a => a.name === req.params.agentName);
@@ -413,13 +423,12 @@ async function start() {
   const onChainAgents = await chain.getRegisteredAgents();
   for (const walletAddr of onChainAgents) {
     if (!world.getAgentByWallet(walletAddr)) {
-      // Agent exists on-chain but not in local state — resolve ENS name
-      const ensName = ens.enabled ? await ens.resolveWalletToName(walletAddr) : null;
-      if (ensName) {
-        const agentName = ensName.replace(`.${ens.parentName}`, '');
+      // Agent exists on-chain but not in local state — resolve from ENS
+      const ensData = ens.enabled ? await ens.resolveWalletToAgent(walletAddr) : null;
+      if (ensData) {
         const id = `agent-recovered-${walletAddr.slice(2, 10)}`;
-        world.addAgent(id, agentName, 'builder', { ownerWallet: walletAddr, ensName });
-        console.log(`  Recovered agent: ${agentName} (${walletAddr.slice(0, 10)}...)`);
+        world.addAgent(id, ensData.name, ensData.archetype, { ownerWallet: walletAddr, ensName: ensData.ensName });
+        console.log(`  Recovered agent: ${ensData.name} (${ensData.archetype}) from ENS`);
       }
     }
   }
