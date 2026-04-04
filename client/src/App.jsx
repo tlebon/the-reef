@@ -291,6 +291,7 @@ export default function App() {
               myAgentId={myAgentId}
               onCommand={handleCommand}
               onClose={() => setSelectedTile(null)}
+              onSelectAgent={(a) => { setSelectedAgent(a); setSelectedTile(null); }}
             />
           )}
 

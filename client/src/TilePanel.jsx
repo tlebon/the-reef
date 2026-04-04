@@ -14,7 +14,14 @@ const RESOURCE_COLORS = {
   shell:   '#fdcb6e',
 };
 
-export default function TilePanel({ tile, agents, myAgentId, onCommand, onClose }) {
+const ARCHETYPE_COLORS = {
+  builder:  '#ff6b6b',
+  merchant: '#fdcb6e',
+  scout:    '#00b894',
+  crafter:  '#a29bfe',
+};
+
+export default function TilePanel({ tile, agents, myAgentId, onCommand, onClose, onSelectAgent }) {
   const owner = agents.find(a => a.id === tile.owner);
   const tileAgents = agents.filter(a => a.x === tile.x && a.y === tile.y);
   const tileServices = tile.services || [];
@@ -56,9 +63,9 @@ export default function TilePanel({ tile, agents, myAgentId, onCommand, onClose 
         <div style={styles.section}>
           <h4 style={styles.sectionTitle}>Agents here</h4>
           {tileAgents.map(a => (
-            <div key={a.id} style={styles.agentRow}>
-              <span style={styles.archetypeBadge}>{a.archetype}</span>
-              <span>{a.name}</span>
+            <div key={a.id} style={styles.agentRow} onClick={() => onSelectAgent && onSelectAgent(a)}>
+              <span style={{ ...styles.archetypeBadge, color: ARCHETYPE_COLORS[a.archetype] }}>{a.archetype}</span>
+              <span style={styles.agentName}>{a.name}</span>
             </div>
           ))}
         </div>
@@ -158,6 +165,10 @@ const styles = {
     alignItems: 'center',
     padding: '4px 0',
     fontSize: '0.85rem',
+    color: '#c8d6e5',
+    cursor: 'pointer',
+  },
+  agentName: {
     color: '#c8d6e5',
   },
   archetypeBadge: {
