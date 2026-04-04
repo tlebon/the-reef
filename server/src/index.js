@@ -5,6 +5,7 @@
  * processes agent actions, and broadcasts state updates.
  */
 
+import 'dotenv/config';
 import crypto from 'crypto';
 import { ethers } from 'ethers';
 import express from 'express';
@@ -159,13 +160,15 @@ io.on('connection', (socket) => {
         socket.emit('quest:completed', completed);
       }
 
-      // Register ENS subname on-chain (fire and forget)
-      ens.registerSubname(name, walletAddress, { archetype });
-
-      // Register on-chain if wallet address provided
-      if (walletAddress) {
-        await chain.registerAgent(walletAddress);
-      }
+      // Register on-chain sequentially (same wallet, can't send in parallel)
+      (async () => {
+        try {
+          await ens.registerSubname(name, walletAddress, { archetype });
+          if (walletAddress) await chain.registerAgent(walletAddress);
+        } catch (err) {
+          console.error(`  On-chain registration error: ${err.message}`);
+        }
+      })();
     }
   });
 

@@ -110,29 +110,52 @@ export class ENSManager {
     const label = ethers.id(safeName);
 
     if (this.registry) {
+      // Register with server as owner first so we can set text records
       const tx = await this.registry.setSubnodeRecord(
         this.parentNode,
         label,
-        ownerAddress || this.signer.address,
+        this.signer.address, // server owns initially
         this.resolver?.target || ethers.ZeroAddress,
         0
       );
       await tx.wait();
       console.log(`  ENS: registered ${safeName}.${this.parentName}`);
-    }
 
-    if (this.resolver) {
-      const records = {
-        archetype: metadata.archetype || '',
-        description: metadata.description || 'Agent in The Reef',
-      };
-      for (const [key, value] of Object.entries(records)) {
-        if (value) {
-          const tx = await this.resolver.setText(subnameNode, key, value);
-          await tx.wait();
+      // Set text records while we're still the owner
+      if (this.resolver) {
+        const records = {
+          archetype: metadata.archetype || '',
+          description: metadata.description || 'Agent in The Reef',
+        };
+        for (const [key, value] of Object.entries(records)) {
+          if (value) {
+            try {
+              const rtx = await this.resolver.setText(subnameNode, key, value);
+              await rtx.wait();
+            } catch (err) {
+              console.error(`  ENS: failed to set ${key} — ${err.message}`);
+            }
+          }
+        }
+        console.log(`  ENS: set text records for ${safeName}.${this.parentName}`);
+      }
+
+      // Transfer ownership to the user
+      if (ownerAddress && ownerAddress !== this.signer.address) {
+        try {
+          const ttx = await this.registry.setSubnodeRecord(
+            this.parentNode,
+            label,
+            ownerAddress,
+            this.resolver?.target || ethers.ZeroAddress,
+            0
+          );
+          await ttx.wait();
+          console.log(`  ENS: transferred ${safeName}.${this.parentName} to ${ownerAddress.slice(0, 10)}...`);
+        } catch (err) {
+          console.error(`  ENS: failed to transfer ownership — ${err.message}`);
         }
       }
-      console.log(`  ENS: set text records for ${safeName}.${this.parentName}`);
     }
   }
 
