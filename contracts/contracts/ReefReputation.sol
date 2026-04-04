@@ -119,6 +119,7 @@ contract ReefReputation {
      */
     function proposeOperator(address newOperator) external onlyOperator {
         require(newOperator != address(0), "ReefReputation: zero address");
+        require(newOperator != operator, "ReefReputation: already operator");
         pendingOperator = newOperator;
         emit OperatorTransferProposed(operator, newOperator);
     }

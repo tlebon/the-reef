@@ -72,6 +72,7 @@ contract ReefWorld {
      */
     function proposeOperator(address newOperator) external onlyOperator {
         require(newOperator != address(0), "ReefWorld: zero address");
+        require(newOperator != operator, "ReefWorld: already operator");
         pendingOperator = newOperator;
         emit OperatorTransferProposed(operator, newOperator);
     }
