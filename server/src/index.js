@@ -6,6 +6,7 @@
  */
 
 import crypto from 'crypto';
+import { ethers } from 'ethers';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -80,10 +81,13 @@ io.on('connection', (socket) => {
 
   // Agent registration
   socket.on('agent:register', async ({ name, archetype, walletAddress, signature, message, delegateWallet }) => {
-    // Verify wallet ownership via signature
-    if (walletAddress && signature && message) {
+    // Verify wallet ownership via signature — required for MetaMask wallets
+    if (walletAddress) {
+      if (!signature || !message) {
+        socket.emit('agent:error', { error: 'Wallet signature required — please reconnect your wallet' });
+        return;
+      }
       try {
-        const { ethers } = await import('ethers');
         const recovered = ethers.verifyMessage(message, signature);
         if (recovered.toLowerCase() !== walletAddress.toLowerCase()) {
           socket.emit('agent:error', { error: 'Wallet signature verification failed' });
