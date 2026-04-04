@@ -112,6 +112,7 @@ io.on('connection', (socket) => {
         // Reconnect to existing agent
         socket.agentId = existing.id;
         socket.emit('agent:registered', { agent: existing, tile: world.getTile(existing.x, existing.y) });
+        io.emit('world:agent_joined', { agent: existing, tile: world.getTile(existing.x, existing.y) });
         return;
       }
     }

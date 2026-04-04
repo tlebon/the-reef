@@ -164,6 +164,7 @@ export default function App() {
           <span style={styles.myAgent}>
             {worldState.agents[myAgentId]?.name || myAgentId}
             {wallet && <span style={styles.walletBadge}>{wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}</span>}
+            <button style={styles.logoutBtn} onClick={() => { disconnect(); setMyAgentId(null); setShowWelcome(true); }}>logout</button>
           </span>
         )}
       </header>
@@ -378,9 +379,18 @@ const styles = {
     alignItems: 'center',
   },
   walletBadge: {
-    color: '#3d4a5c',
+    color: '#5f6d7e',
     fontSize: '0.7rem',
     fontFamily: 'monospace',
+  },
+  logoutBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#3d4a5c',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontSize: '0.7rem',
+    padding: '2px 4px',
   },
   modal: {
     position: 'fixed',

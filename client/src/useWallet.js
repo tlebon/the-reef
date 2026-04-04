@@ -55,6 +55,7 @@ export function useWallet() {
 
   // Create a new wallet — returns private key once, does NOT persist it
   const createWallet = useCallback(() => {
+    if (wallet) return wallet; // prevent double-create
     const newWallet = ethers.Wallet.createRandom();
     const walletData = {
       address: newWallet.address,
