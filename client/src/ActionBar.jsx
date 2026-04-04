@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function ActionBar({ agent, onCommand }) {
+export default function ActionBar({ agent, currentTile, onCommand }) {
   const [showBuild, setShowBuild] = useState(false);
   const [buildSymbol, setBuildSymbol] = useState('#');
 
@@ -61,37 +61,84 @@ export default function ActionBar({ agent, onCommand }) {
         </div>
 
         <div style={styles.actionBtns}>
-          {showBuild ? (
-            <div style={styles.buildRow}>
-              <input
-                style={styles.buildInput}
-                value={buildSymbol}
-                onChange={e => setBuildSymbol(e.target.value.slice(0, 1))}
-                maxLength={1}
-              />
-              <button style={styles.actionBtn} onClick={() => { onCommand(`BUILD ${buildSymbol}`); setShowBuild(false); }}>
-                {agent.tilesOwned === 0 ? 'Claim home (free)' : 'Mint tile'}
-              </button>
-              <button style={styles.cancelBtn} onClick={() => setShowBuild(false)}>x</button>
-            </div>
-          ) : (
-            <button style={styles.actionBtn} onClick={() => setShowBuild(true)}>
-              {agent.tilesOwned === 0 ? 'Claim home tile (free)' : 'Mint tile (costs resources)'}
-            </button>
-          )}
+          {currentTile && currentTile.owner === agent.id ? (
+            // On your own tile — show owner actions
+            <>
+              <div style={styles.tileLabel}>Your tile ({currentTile.resource})</div>
+              <button style={styles.actionBtn} onClick={() => {
+                const name = prompt('Service name:');
+                if (!name) return;
+                const price = prompt('Price (USDC):') || '0.01';
+                const desc = prompt('Description:') || 'A service';
+                onCommand(`REGISTER_SERVICE ${name} ${price} ${desc}`);
+              }}>Register service</button>
+              <button style={styles.actionBtn} onClick={() => {
+                const msg = prompt('Say something:');
+                if (msg) onCommand(`SAY ${msg}`);
+              }}>Say</button>
+              <button style={styles.actionBtn} onClick={() => {
+                const reward = prompt('Bounty reward (USDC):') || '0.01';
+                const desc = prompt('Bounty description:');
+                if (desc) onCommand(`POST_BOUNTY ${reward} ${desc}`);
+              }}>Post bounty</button>
+            </>
+          ) : currentTile && currentTile.built ? (
+            // On someone else's tile
+            <>
+              <div style={styles.tileLabel}>{currentTile.resource} tile (owned)</div>
+              <button style={styles.actionBtn} onClick={() => {
+                const msg = prompt('Say something:');
+                if (msg) onCommand(`SAY ${msg}`);
+              }}>Say</button>
+            </>
+          ) : currentTile && !currentTile.built ? (
+            // On an unbuilt tile
+            showBuild ? (
+              <div style={styles.buildRow}>
+                <input
+                  style={styles.buildInput}
+                  value={buildSymbol}
+                  onChange={e => setBuildSymbol(e.target.value.slice(0, 1))}
+                  maxLength={1}
+                />
+                <button style={styles.actionBtn} onClick={() => { onCommand(`BUILD ${buildSymbol}`); setShowBuild(false); }}>
+                  {agent.tilesOwned === 0 ? 'Claim (free)' : 'Mint'}
+                </button>
+                <button style={styles.cancelBtn} onClick={() => setShowBuild(false)}>x</button>
+              </div>
+            ) : (
+              <>
+                <div style={styles.tileLabel}>{currentTile.resource} tile (unclaimed)</div>
+                <button style={styles.actionBtn} onClick={() => setShowBuild(true)}>
+                  {agent.tilesOwned === 0 ? 'Claim home tile (free)' : 'Mint tile (costs resources)'}
+                </button>
+              </>
+            )
+          ) : null}
         </div>
       </div>
 
-      {agent.inventory && Object.keys(agent.inventory).some(k => agent.inventory[k] > 0) && (
-        <div style={styles.inventory}>
-          {Object.entries(agent.inventory).filter(([,v]) => v > 0).map(([res, count]) => (
-            <span key={res} style={styles.invItem}>
-              <span style={styles.invRes}>{res}</span>
-              <span style={styles.invCount}>{count}</span>
-            </span>
-          ))}
-        </div>
-      )}
+      <div style={styles.bottomRow}>
+        {agent.inventory && Object.keys(agent.inventory).some(k => agent.inventory[k] > 0) && (
+          <div style={styles.inventory}>
+            {Object.entries(agent.inventory).filter(([,v]) => v > 0).map(([res, count]) => (
+              <span key={res} style={styles.invItem}>
+                <span style={styles.invRes}>{res}</span>
+                <span style={styles.invCount}>{count}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {agent.loot && agent.loot.length > 0 && (
+          <div style={styles.inventory}>
+            {agent.loot.map(item => (
+              <span key={item.id} style={{ ...styles.invItem, color: item.color }}>
+                {item.name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -161,6 +208,13 @@ const styles = {
     gap: '4px',
     flex: 1,
   },
+  tileLabel: {
+    fontSize: '0.7rem',
+    color: '#5f6d7e',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    marginBottom: '2px',
+  },
   actionBtn: {
     padding: '6px 12px',
     background: '#1a2035',
@@ -195,10 +249,15 @@ const styles = {
     cursor: 'pointer',
     fontFamily: 'monospace',
   },
+  bottomRow: {
+    display: 'flex',
+    gap: '16px',
+    marginTop: '8px',
+    flexWrap: 'wrap',
+  },
   inventory: {
     display: 'flex',
     gap: '10px',
-    marginTop: '8px',
     fontSize: '0.75rem',
   },
   invItem: {

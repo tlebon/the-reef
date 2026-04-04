@@ -10,6 +10,29 @@ import fs from 'fs';
 
 const RESOURCES = ['coral', 'crystal', 'kelp', 'shell'];
 
+const RARITY_TABLE = [
+  { rarity: 'common',    weight: 60, color: '#8892a4' },
+  { rarity: 'uncommon',  weight: 25, color: '#00b894' },
+  { rarity: 'rare',      weight: 10, color: '#a29bfe' },
+  { rarity: 'legendary', weight: 4,  color: '#fdcb6e' },
+  { rarity: 'mythic',    weight: 1,  color: '#ff6b6b' },
+];
+
+const LOOT_NAMES = {
+  coral:   ['Coral Shard', 'Reef Fragment', 'Polyp Bloom', 'Tide Pearl', 'Abyssal Coral'],
+  crystal: ['Crystal Splinter', 'Prism Dust', 'Geode Heart', 'Star Fragment', 'Void Crystal'],
+  kelp:    ['Kelp Strand', 'Sea Vine', 'Drift Seed', 'Deep Root', 'Leviathan Kelp'],
+  shell:   ['Shell Chip', 'Nautilus Ring', 'Conch Echo', 'Pearl Drop', 'Ancient Shell'],
+};
+
+const RANDOM_QUEST_TEMPLATES = [
+  { desc: 'Deliver {amount} {resource} to tile ({x},{y})', type: 'deliver' },
+  { desc: 'Discover {amount} new tiles', type: 'explore' },
+  { desc: 'Trade with {amount} different agents', type: 'trade' },
+  { desc: 'Build on a {resource} tile', type: 'build' },
+  { desc: 'Collect {amount} {resource}', type: 'collect' },
+];
+
 const ARCHETYPES = {
   builder:  { affinity: 'coral',   buildCost: 2, moveCost: 1, description: 'Efficient construction, structural bonuses' },
   merchant: { affinity: 'shell',   buildCost: 3, moveCost: 1, description: 'Better trade rates, price negotiation' },
@@ -219,6 +242,35 @@ export class World {
     };
   }
 
+  _rollRarity() {
+    const roll = Math.random() * 100;
+    let cumulative = 0;
+    for (const tier of RARITY_TABLE) {
+      cumulative += tier.weight;
+      if (roll < cumulative) return tier;
+    }
+    return RARITY_TABLE[0];
+  }
+
+  _generateLoot(tile) {
+    const names = LOOT_NAMES[tile.resource] || LOOT_NAMES.coral;
+    const tier = this._rollRarity();
+    // Higher rarity = pick from later (rarer) names in the array
+    const nameIndex = Math.min(
+      Math.floor(RARITY_TABLE.indexOf(tier) * names.length / RARITY_TABLE.length),
+      names.length - 1
+    );
+    return {
+      id: crypto.randomUUID(),
+      name: names[nameIndex],
+      rarity: tier.rarity,
+      color: tier.color,
+      resource: tile.resource,
+      foundAt: { x: tile.x, y: tile.y },
+      foundTick: this.tick,
+    };
+  }
+
   _cmdMove(agent, direction) {
     if (!direction) return { error: 'Usage: MOVE <N|S|E|W>' };
 
@@ -239,8 +291,25 @@ export class World {
     agent.energy -= cost;
     agent.x = nx;
     agent.y = ny;
+
+    const result = { ok: true, message: `Moved ${direction} to (${nx},${ny})`, energy: agent.energy };
+
+    // Loot chance on first visit to a tile (30% chance)
+    if (!tile.visitedBy) tile.visitedBy = [];
+    if (!tile.visitedBy.includes(agent.id)) {
+      tile.visitedBy.push(agent.id);
+      if (Math.random() < 0.3) {
+        const loot = this._generateLoot(tile);
+        if (!agent.loot) agent.loot = [];
+        agent.loot.push(loot);
+        result.loot = loot;
+        result.message += ` — Found ${loot.rarity} ${loot.name}!`;
+        this._log(`${agent.name} found ${loot.rarity} ${loot.name} at (${nx},${ny})`);
+      }
+    }
+
     this._log(`${agent.name} moved ${direction} to (${nx},${ny})`);
-    return { ok: true, message: `Moved ${direction} to (${nx},${ny})`, energy: agent.energy };
+    return result;
   }
 
   _cmdSay(agent, text) {
@@ -489,6 +558,48 @@ export class World {
         agent.inventory[tile.resource] = (agent.inventory[tile.resource] || 0) + amount;
       }
     }
+
+    // Generate random quests periodically (every 5 ticks, max 10 active)
+    const activeQuests = this.bounties.filter(b => !b.completed && b.posterId === 'system');
+    if (this.tick % 5 === 0 && activeQuests.length < 10 && this.agents.size > 0) {
+      const quest = this._generateRandomQuest();
+      if (quest) {
+        this.bounties.push(quest);
+        this._log(`New quest: "${quest.description}" for ${quest.reward} USDC`);
+      }
+    }
+  }
+
+  _generateRandomQuest() {
+    const template = RANDOM_QUEST_TEMPLATES[Math.floor(Math.random() * RANDOM_QUEST_TEMPLATES.length)];
+    const resource = RESOURCES[Math.floor(Math.random() * RESOURCES.length)];
+    const amount = Math.floor(Math.random() * 5) + 2;
+
+    // Pick a random revealed tile for delivery quests
+    const tiles = [...this.tiles.values()];
+    const targetTile = tiles[Math.floor(Math.random() * tiles.length)];
+
+    const desc = template.desc
+      .replace('{amount}', amount)
+      .replace('{resource}', resource)
+      .replace('{x}', targetTile.x)
+      .replace('{y}', targetTile.y);
+
+    const rewardBase = { deliver: 0.03, explore: 0.02, trade: 0.04, build: 0.025, collect: 0.015 };
+    const reward = Math.round((rewardBase[template.type] || 0.02) * amount * 100) / 100;
+
+    return {
+      id: crypto.randomUUID(),
+      poster: 'The Reef',
+      posterId: 'system',
+      reward,
+      description: desc,
+      questType: template.type,
+      claimed: false,
+      claimedBy: null,
+      completed: false,
+      postedAt: this.tick,
+    };
   }
 
   // ── State ──────────────────────────────────────────────────────────

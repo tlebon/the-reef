@@ -196,7 +196,11 @@ export default function App() {
       </div>
 
       {myAgentId && worldState.agents[myAgentId] && (
-        <ActionBar agent={worldState.agents[myAgentId]} onCommand={handleCommand} />
+        <ActionBar
+          agent={worldState.agents[myAgentId]}
+          currentTile={tiles[`${worldState.agents[myAgentId].x},${worldState.agents[myAgentId].y}`]}
+          onCommand={handleCommand}
+        />
       )}
     </div>
   );
