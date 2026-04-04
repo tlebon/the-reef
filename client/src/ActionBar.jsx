@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function ActionBar({ agent, currentTile, onCommand }) {
+export default function ActionBar({ agent, currentTile, messages, onCommand }) {
   const [showBuild, setShowBuild] = useState(false);
   const [buildSymbol, setBuildSymbol] = useState('#');
 
@@ -62,16 +62,27 @@ export default function ActionBar({ agent, currentTile, onCommand }) {
 
         <div style={styles.actionBtns}>
           {currentTile && currentTile.owner === agent.id ? (
-            // On your own tile — show owner actions
+            // On your own tile — show services + owner actions
             <>
               <div style={styles.tileLabel}>Your tile ({currentTile.resource})</div>
+              {currentTile.services && currentTile.services.length > 0 && (
+                <div style={styles.serviceList}>
+                  {currentTile.services.filter(s => s.agentId === agent.id).map((s, i) => (
+                    <div key={i} style={styles.serviceItem}>
+                      <span style={styles.serviceName}>{s.name}</span>
+                      <span style={styles.servicePrice}>{s.price} USDC</span>
+                      <button style={styles.smallBtn} onClick={() => onCommand(`REMOVE_SERVICE ${s.name}`)}>x</button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <button style={styles.actionBtn} onClick={() => {
                 const name = prompt('Service name:');
                 if (!name) return;
                 const price = prompt('Price (USDC):') || '0.01';
                 const desc = prompt('Description:') || 'A service';
                 onCommand(`REGISTER_SERVICE ${name} ${price} ${desc}`);
-              }}>Register service</button>
+              }}>+ Add service</button>
               <button style={styles.actionBtn} onClick={() => {
                 const msg = prompt('Say something:');
                 if (msg) onCommand(`SAY ${msg}`);
@@ -139,6 +150,15 @@ export default function ActionBar({ agent, currentTile, onCommand }) {
           </div>
         )}
       </div>
+      {messages && messages.length > 0 && (
+        <div style={styles.chatLog}>
+          {messages.slice(-3).map((m, i) => (
+            <div key={i} style={styles.chatMsg}>
+              <span style={styles.chatFrom}>{m.from}:</span> {m.text}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -215,6 +235,33 @@ const styles = {
     letterSpacing: '0.5px',
     marginBottom: '2px',
   },
+  serviceList: {
+    marginBottom: '4px',
+  },
+  serviceItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '3px 0',
+    fontSize: '0.75rem',
+  },
+  serviceName: {
+    color: '#c8d6e5',
+    flex: 1,
+  },
+  servicePrice: {
+    color: '#fdcb6e',
+  },
+  smallBtn: {
+    background: 'none',
+    border: '1px solid #2d3748',
+    color: '#5f6d7e',
+    borderRadius: '2px',
+    cursor: 'pointer',
+    fontFamily: 'monospace',
+    fontSize: '0.65rem',
+    padding: '1px 4px',
+  },
   actionBtn: {
     padding: '6px 12px',
     background: '#1a2035',
@@ -269,5 +316,19 @@ const styles = {
   },
   invCount: {
     color: '#c8d6e5',
+  },
+  chatLog: {
+    marginTop: '6px',
+    borderTop: '1px solid #1a2035',
+    paddingTop: '4px',
+  },
+  chatMsg: {
+    fontSize: '0.7rem',
+    color: '#5f6d7e',
+    padding: '1px 0',
+  },
+  chatFrom: {
+    color: '#00d4aa',
+    fontWeight: 600,
   },
 };

@@ -199,6 +199,7 @@ export default function App() {
         <ActionBar
           agent={worldState.agents[myAgentId]}
           currentTile={tiles[`${worldState.agents[myAgentId].x},${worldState.agents[myAgentId].y}`]}
+          messages={worldState.messages}
           onCommand={handleCommand}
         />
       )}

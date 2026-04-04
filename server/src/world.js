@@ -173,6 +173,7 @@ export class World {
       case 'BUILD':     return this._cmdBuild(agent, args[0]);
       case 'TRADE':     return this._cmdTrade(agent, args);
       case 'REGISTER_SERVICE': return this._cmdRegisterService(agent, args);
+      case 'REMOVE_SERVICE':   return this._cmdRemoveService(agent, args);
       case 'INVOKE_SERVICE':   return this._cmdInvokeService(agent, args);
       case 'POST_BOUNTY':      return this._cmdPostBounty(agent, args);
       case 'CLAIM_BOUNTY':     return this._cmdClaimBounty(agent, args);
@@ -446,6 +447,29 @@ export class World {
 
     this._log(`${agent.name} registered service: ${name} (${price} USDC)`);
     return { ok: true, message: `Registered service: ${name} at ${price} USDC`, service };
+  }
+
+  _cmdRemoveService(agent, args) {
+    if (args.length < 1) return { error: 'Usage: REMOVE_SERVICE <name>' };
+    const name = args[0];
+
+    const idx = agent.services.findIndex(s => s.name === name);
+    if (idx === -1) return { error: `You don't have a service called '${name}'` };
+
+    agent.services.splice(idx, 1);
+
+    // Remove from tile too
+    const tile = this.getTile(agent.services[0]?.tileX ?? agent.x, agent.services[0]?.tileY ?? agent.y);
+    if (tile) {
+      tile.services = tile.services.filter(s => !(s.agentId === agent.id && s.name === name));
+    }
+    // Also check all tiles for this service
+    for (const t of this.tiles.values()) {
+      t.services = (t.services || []).filter(s => !(s.agentId === agent.id && s.name === name));
+    }
+
+    this._log(`${agent.name} removed service: ${name}`);
+    return { ok: true, message: `Removed service: ${name}` };
   }
 
   _cmdInvokeService(agent, args) {
