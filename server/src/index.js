@@ -16,6 +16,7 @@ import { ChainConnector } from './chain.js';
 import { seedWorld, tickNPCs, createAgentQuests } from './seed.js';
 import { checkQuests } from './quests.js';
 import { ENSManager } from './ens.js';
+import { PaymentManager } from './payments.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -35,6 +36,7 @@ const io = new Server(httpServer, {
 const world = new World();
 const chain = new ChainConnector();
 const ens = new ENSManager();
+const payments = new PaymentManager(world);
 
 // ── REST API ─────────────────────────────────────────────────────────
 
@@ -59,6 +61,10 @@ app.get('/api/agents/:id', (req, res) => {
   const agent = world.getAgent(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
   res.json({ ...agent, ensName: ens.enabled ? ens.getSubname(agent.name) : null });
+});
+
+app.get('/api/agents/:id/balance', (req, res) => {
+  res.json({ balance: payments.getBalance(req.params.id) });
 });
 
 app.get('/api/bounties', (req, res) => {
@@ -186,7 +192,25 @@ io.on('connection', (socket) => {
   });
 
   // Agent command
-  socket.on('agent:command', ({ agentId, command }) => {
+  socket.on('agent:command', async ({ agentId, command }) => {
+    // Intercept INVOKE_SERVICE to process payment first
+    const parts = command.trim().split(/\s+/);
+    if (parts[0]?.toUpperCase() === 'INVOKE_SERVICE' && parts.length >= 3) {
+      const targetName = parts[1];
+      const serviceName = parts[2];
+      const target = [...world.agents.values()].find(a => a.name === targetName);
+      if (target) {
+        const service = target.services.find(s => s.name === serviceName);
+        if (service && service.price > 0) {
+          const payResult = await payments.processPayment(agentId, target.id, service.price, serviceName);
+          if (payResult.error) {
+            socket.emit('agent:result', { command, result: { error: payResult.error } });
+            return;
+          }
+        }
+      }
+    }
+
     const result = world.execute(agentId, command);
     socket.emit('agent:result', { command, result });
 
@@ -196,6 +220,10 @@ io.on('connection', (socket) => {
       if (agent) {
         const completed = checkQuests(world, agent);
         if (completed.length > 0) {
+          // Credit quest rewards via payment ledger
+          for (const q of completed) {
+            payments.credit(agentId, q.reward, `Quest: ${q.description}`);
+          }
           socket.emit('quest:completed', completed);
         }
       }
@@ -239,6 +267,7 @@ function processTick(blockNumber) {
 async function start() {
   await chain.init();
   await ens.init();
+  await payments.init();
 
   // Load saved state or seed fresh
   const loaded = world.load(SAVE_PATH);
