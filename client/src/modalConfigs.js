@@ -3,12 +3,18 @@
  * Prevents duplication of field definitions.
  */
 
-// Sanitize: strip characters that would break space-delimited commands
-export const sanitizeName = (key, value) => {
+// Sanitize user input: strip control characters, limit names to safe chars
+export const sanitizeInput = (key, value) => {
+  // Names must be alphanumeric (used as command tokens)
   if (key === 'name' || key === 'serviceName') {
     return value.replace(/[^a-zA-Z0-9_-]/g, '');
   }
-  return value;
+  // Resource fields must be a single lowercase word
+  if (key === 'give' || key === 'want' || key === 'resource') {
+    return value.replace(/[^a-z]/g, '');
+  }
+  // All other fields: strip control characters and newlines
+  return value.replace(/[\x00-\x1f]/g, '');
 };
 
 export const MODAL_CONFIGS = {

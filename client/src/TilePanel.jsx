@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import InputModal from './InputModal';
-import { MODAL_CONFIGS, sanitizeName } from './modalConfigs';
+import { MODAL_CONFIGS, sanitizeInput } from './modalConfigs';
 
 const MINT_COSTS = {
   coral:   { coral: 3, crystal: 2, kelp: 0, shell: 1 },
@@ -34,14 +34,15 @@ export default function TilePanel({ tile, agents, myAgentId, onCommand, onClose,
   const renderModal = () => {
     if (!modal) return null;
 
-    const config = MODAL_CONFIGS[modal.type];
+    const rawCfg = MODAL_CONFIGS[modal.type];
+    const config = typeof rawCfg === 'function' ? rawCfg(modal.ownerName) : rawCfg;
     if (!config) return null;
 
     return (
       <InputModal
         title={config.title}
         fields={config.fields}
-        sanitize={sanitizeName}
+        sanitize={sanitizeInput}
         onCancel={closeModal}
         onConfirm={(vals) => {
           closeModal();

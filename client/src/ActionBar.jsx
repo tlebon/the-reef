@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import InputModal from './InputModal';
-import { MODAL_CONFIGS, sanitizeName } from './modalConfigs';
+import { MODAL_CONFIGS, sanitizeInput } from './modalConfigs';
 
 export default function ActionBar({ agent, currentTile, messages, agents, onCommand }) {
   const [showBuild, setShowBuild] = useState(false);
@@ -50,7 +50,7 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
       <InputModal
         title={config.title}
         fields={config.fields}
-        sanitize={sanitizeName}
+        sanitize={sanitizeInput}
         onCancel={closeModal}
         onConfirm={(vals) => {
           closeModal();
