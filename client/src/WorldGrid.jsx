@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useRef, useCallback } from 'react';
 
 const TILE_SIZE = 40;
 const RESOURCE_COLORS = {
@@ -39,13 +39,53 @@ export default function WorldGrid({ tiles, agents, onSelectAgent, onSelectTile, 
   const width = (bounds.maxX - bounds.minX + 1) * TILE_SIZE;
   const height = (bounds.maxY - bounds.minY + 1) * TILE_SIZE;
 
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragging = useRef(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+  const panStart = useRef({ x: 0, y: 0 });
+
+  const handleWheel = useCallback((e) => {
+    e.preventDefault();
+    setZoom(z => Math.max(0.3, Math.min(3, z - e.deltaY * 0.001)));
+  }, []);
+
+  const handleMouseDown = useCallback((e) => {
+    if (e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey)) {
+      dragging.current = true;
+      dragStart.current = { x: e.clientX, y: e.clientY };
+      panStart.current = { ...pan };
+      e.preventDefault();
+    }
+  }, [pan]);
+
+  const handleMouseMove = useCallback((e) => {
+    if (!dragging.current) return;
+    setPan({
+      x: panStart.current.x + (e.clientX - dragStart.current.x),
+      y: panStart.current.y + (e.clientY - dragStart.current.y),
+    });
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    dragging.current = false;
+  }, []);
+
   return (
-    <div style={styles.wrapper}>
+    <div
+      style={styles.wrapper}
+      onWheel={handleWheel}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onContextMenu={e => e.preventDefault()}
+    >
       <svg
         width={width}
         height={height}
         viewBox={`${bounds.minX * TILE_SIZE} ${bounds.minY * TILE_SIZE} ${width} ${height}`}
-        style={styles.svg}
+        style={{ ...styles.svg, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'center' }}
       >
         {/* Render tiles */}
         {Object.values(tiles).map(tile => {
