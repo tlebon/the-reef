@@ -530,11 +530,15 @@ export class World {
     if (!service) return { error: `${targetName} has no service called '${serviceName}'` };
 
     agent.energy -= 1;
-
-    // Payment would happen via Circle nanopayments in production
-    // For now, track the transaction
     agent.reputation.transactions++;
     target.reputation.transactions++;
+
+    // Handle NPC built-in services
+    const npcResult = this._handleNpcService(agent, target, serviceName, serviceArgs);
+    if (npcResult) {
+      this._log(`${agent.name} used ${target.name}'s ${serviceName}: ${npcResult.message}`);
+      return npcResult;
+    }
 
     this._log(`${agent.name} invoked ${target.name}'s ${serviceName} service`);
     return {
@@ -544,6 +548,51 @@ export class World {
       args: serviceArgs.join(' '),
       // In production: payment receipt, service response
     };
+  }
+
+  _handleNpcService(agent, npc, serviceName, args) {
+    // Barnacle: exchange — swap resources 1:1
+    if (npc.id === 'npc-merchant' && serviceName === 'exchange') {
+      if (args.length < 2) return { ok: false, error: 'Usage: INVOKE_SERVICE Barnacle exchange <give_resource> <want_resource>' };
+      const [give, want] = args;
+      if (!RESOURCES.includes(give) || !RESOURCES.includes(want)) return { ok: false, error: `Unknown resource. Options: ${RESOURCES.join(', ')}` };
+      if (give === want) return { ok: false, error: 'Cannot exchange same resource' };
+      if ((agent.inventory[give] || 0) < 1) return { ok: false, error: `You don't have any ${give}` };
+
+      agent.inventory[give] -= 1;
+      agent.inventory[want] = (agent.inventory[want] || 0) + 1;
+      return { ok: true, message: `Exchanged 1 ${give} for 1 ${want} with ${npc.name}` };
+    }
+
+    // Barnacle: recharge — full energy
+    if (npc.id === 'npc-merchant' && serviceName === 'recharge') {
+      agent.energy = MAX_ENERGY;
+      return { ok: true, message: `${npc.name} recharged your energy to ${MAX_ENERGY}`, energy: agent.energy };
+    }
+
+    // Polyp: combine — 3 of any resource → 1 rare material (added to loot)
+    if (npc.id === 'npc-crafter' && serviceName === 'combine') {
+      if (args.length < 1) return { ok: false, error: 'Usage: INVOKE_SERVICE Polyp combine <resource>' };
+      const res = args[0];
+      if (!RESOURCES.includes(res)) return { ok: false, error: `Unknown resource. Options: ${RESOURCES.join(', ')}` };
+      if ((agent.inventory[res] || 0) < 3) return { ok: false, error: `Need 3 ${res} (have ${agent.inventory[res] || 0})` };
+
+      agent.inventory[res] -= 3;
+      const loot = {
+        id: crypto.randomUUID(),
+        name: `Refined ${res.charAt(0).toUpperCase() + res.slice(1)}`,
+        rarity: 'uncommon',
+        color: '#00b894',
+        resource: res,
+        foundAt: { x: npc.x, y: npc.y },
+        foundTick: this.tick,
+      };
+      if (!agent.loot) agent.loot = [];
+      agent.loot.push(loot);
+      return { ok: true, message: `${npc.name} combined 3 ${res} into ${loot.name}!`, loot };
+    }
+
+    return null; // Not an NPC service
   }
 
   _cmdPostBounty(agent, args) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function ActionBar({ agent, currentTile, messages, onCommand }) {
+export default function ActionBar({ agent, currentTile, messages, agents, onCommand }) {
   const [showBuild, setShowBuild] = useState(false);
   const [buildSymbol, setBuildSymbol] = useState('#');
 
@@ -95,9 +95,29 @@ export default function ActionBar({ agent, currentTile, messages, onCommand }) {
               <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
             </>
           ) : currentTile && currentTile.built ? (
-            // On someone else's tile
+            // On someone else's tile — show their services
             <>
               <div style={styles.tileLabel}>{currentTile.resource} tile (owned)</div>
+              {currentTile.services && currentTile.services.length > 0 && (
+                <div style={styles.serviceList}>
+                  {currentTile.services.map((s, i) => (
+                    <button key={i} style={styles.actionBtn} onClick={() => {
+                      // Find the owner agent name
+                      const ownerName = agents.find(a => a.id === s.agentId)?.name;
+                      if (!ownerName) return;
+                      const extraArgs = s.name === 'exchange'
+                        ? (() => { const g = prompt('Give resource (coral/crystal/kelp/shell):'); const w = prompt('Want resource:'); return g && w ? `${g} ${w}` : null; })()
+                        : s.name === 'combine'
+                        ? prompt('Which resource to combine? (coral/crystal/kelp/shell):')
+                        : '';
+                      if (extraArgs === null) return;
+                      onCommand(`INVOKE_SERVICE ${ownerName} ${s.name} ${extraArgs}`.trim());
+                    }}>
+                      {s.name} ({s.price} USDC) — {s.description}
+                    </button>
+                  ))}
+                </div>
+              )}
               <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
               <button style={styles.actionBtn} onClick={() => {
                 const msg = prompt('Say something:');
