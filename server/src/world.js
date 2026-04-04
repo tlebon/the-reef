@@ -114,6 +114,9 @@ export class World {
     if (!ARCHETYPES[archetype]) {
       return { error: `Unknown archetype: ${archetype}. Choose: ${Object.keys(ARCHETYPES).join(', ')}` };
     }
+    if ([...this.agents.values()].some(a => a.name.toLowerCase() === name.toLowerCase())) {
+      return { error: `Name '${name}' is already taken` };
+    }
 
     // Spawn at random frontier tile, or origin if no frontier
     const frontier = this._getFrontierTiles();
@@ -230,7 +233,6 @@ export class World {
         y: agent.y,
         energy: agent.energy,
         inventory: agent.inventory,
-        tilesOwned: agent.tilesOwned,
         tilesOwned: agent.tilesOwned,
         reputation: { transactions: agent.reputation.transactions, avgRating: this._avgRating(agent) },
       },
@@ -755,7 +757,13 @@ export class World {
   load(path) {
     if (!fs.existsSync(path)) return false;
 
-    const data = JSON.parse(fs.readFileSync(path, 'utf-8'));
+    let data;
+    try {
+      data = JSON.parse(fs.readFileSync(path, 'utf-8'));
+    } catch (err) {
+      console.error(`  World: failed to load ${path} — ${err.message}`);
+      return false;
+    }
     this.tick = data.tick || 0;
 
     // Restore tiles
