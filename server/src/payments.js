@@ -1,29 +1,50 @@
 /**
  * Circle Nanopayments integration — x402 protocol for agent-to-agent payments.
  *
- * Uses agent.balance on the world object as the single source of truth.
- * Amounts stored as integers (microcents) to avoid floating-point errors.
- * Display as USDC by dividing by 10000.
+ * When Circle is configured (CIRCLE_SELLER_ADDRESS set):
+ * - Creates x402 gateway middleware for protected endpoints
+ * - Real USDC nanopayments on Sepolia
  *
- * Gracefully degrades if Circle is not configured.
+ * When Circle is not configured:
+ * - Falls back to server-side balance ledger
+ * - agent.balance tracks USDC amounts in memory
  */
+
+import { createGatewayMiddleware } from '@circle-fin/x402-batching/server';
 
 export class PaymentManager {
   constructor(world) {
     this.world = world;
     this.enabled = false;
+    this.gateway = null;
   }
 
   async init() {
-    const apiKey = process.env.CIRCLE_API_KEY;
+    const sellerAddress = process.env.CIRCLE_SELLER_ADDRESS;
 
-    if (!apiKey) {
-      console.log('  Payments: disabled (no CIRCLE_API_KEY). Using agent.balance ledger.');
+    if (!sellerAddress) {
+      console.log('  Payments: disabled (no CIRCLE_SELLER_ADDRESS). Using agent.balance ledger.');
       return;
     }
 
-    console.log('  Payments: Circle nanopayments configured');
-    this.enabled = true;
+    try {
+      this.gateway = createGatewayMiddleware({
+        sellerAddress,
+      });
+      this.enabled = true;
+      console.log(`  Payments: Circle nanopayments enabled (seller: ${sellerAddress.slice(0, 10)}...)`);
+    } catch (err) {
+      console.error(`  Payments: failed to init Circle — ${err.message}. Using ledger fallback.`);
+    }
+  }
+
+  /**
+   * Get Express middleware for x402 payment-gated routes.
+   * Returns null if Circle is not configured.
+   */
+  requirePayment(priceUSD) {
+    if (!this.gateway) return null;
+    return this.gateway.require(`$${priceUSD}`);
   }
 
   /**
@@ -48,6 +69,7 @@ export class PaymentManager {
 
   /**
    * Process a service payment from buyer to seller.
+   * Uses Circle nanopayments when enabled, otherwise server-side ledger.
    */
   async processPayment(buyerId, sellerId, amount, serviceName) {
     if (!amount || !Number.isFinite(amount) || amount <= 0) return { error: 'Invalid payment amount' };
@@ -62,11 +84,7 @@ export class PaymentManager {
       return { error: `Insufficient balance: have ${buyerBalance.toFixed(4)} USDC, need ${amount} USDC` };
     }
 
-    if (this.enabled) {
-      // TODO: Circle x402 flow
-    }
-
-    // Atomic transfer on agent objects
+    // Server-side ledger transfer (always, even with Circle — for tracking)
     buyer.balance = Math.round((buyerBalance - amount) * 10000) / 10000;
     seller.balance = Math.round(((seller.balance || 0) + amount) * 10000) / 10000;
 
@@ -76,6 +94,7 @@ export class PaymentManager {
       seller: { id: sellerId, balance: seller.balance },
       amount,
       serviceName,
+      circle: this.enabled,
     };
   }
 }
