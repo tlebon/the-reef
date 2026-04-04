@@ -84,8 +84,16 @@ export default function App() {
       }
     });
 
-    s.on('agent:error', ({ error }) => {
-      addActivity(`Error: ${error}`);
+    s.on('agent:error', async ({ error }) => {
+      if (error.includes('expired') || error.includes('signature')) {
+        addActivity('Session expired — reconnecting wallet...');
+        const w = await connectMetaMask();
+        if (w) {
+          addActivity('Wallet reconnected — try again');
+        }
+      } else {
+        addActivity(`Error: ${error}`);
+      }
       setJoining(false);
     });
 

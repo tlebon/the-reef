@@ -7,19 +7,19 @@ import { useState, useCallback } from 'react';
 import { ethers } from 'ethers';
 
 export function useWallet() {
-  // Don't auto-restore wallets — require fresh signature on each session
-  // We only remember the address to show "reconnect as 0x..." prompt
-  const [wallet, setWallet] = useState(null);
-  const [savedAddress, setSavedAddress] = useState(() => {
+  // Restore wallet address on load — allows session persistence
+  // For MetaMask: will need to re-sign on next registration/action
+  const [wallet, setWallet] = useState(() => {
     try {
       const saved = localStorage.getItem('reef-wallet');
       if (!saved) return null;
-      return JSON.parse(saved).address || null;
+      return JSON.parse(saved);
     } catch {
       localStorage.removeItem('reef-wallet');
       return null;
     }
   });
+  const savedAddress = wallet?.address || null;
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState(null);
 

@@ -104,7 +104,7 @@ io.on('connection', (socket) => {
         return;
       }
       const sigAge = Date.now() - parseInt(tsMatch[1]);
-      if (sigAge > 5 * 60 * 1000) {
+      if (sigAge > 60 * 60 * 1000) { // 1 hour
         socket.emit('agent:error', { error: 'Signature expired — please sign again' });
         return;
       }
@@ -247,14 +247,21 @@ async function start() {
     seedWorld(world);
   }
 
-  // Sync ticks to blocks if chain is connected, otherwise use interval
+  // Sync ticks to blocks via WebSocket — 2 ticks per block (6s each, 12s blocks)
+  let lastBlockTick = Date.now();
   const blockSync = chain.onNewBlock((blockNumber) => {
+    lastBlockTick = Date.now();
     processTick(blockNumber);
+    // Second tick halfway through the block
+    setTimeout(() => processTick(blockNumber), TICK_INTERVAL);
   });
 
-  if (!blockSync) {
-    setInterval(() => processTick(null), TICK_INTERVAL);
-  }
+  // Interval fallback — only fires if no block received recently
+  setInterval(() => {
+    if (!blockSync || Date.now() - lastBlockTick > TICK_INTERVAL * 3) {
+      processTick(null);
+    }
+  }, TICK_INTERVAL);
 
   httpServer.listen(PORT, () => {
     console.log(`
