@@ -224,8 +224,9 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
                 const { ethers } = await import('ethers');
                 const provider = new ethers.BrowserProvider(window.ethereum);
                 const signer = await provider.getSigner();
-                const sig = wallet.signature;
-                const msg = wallet.message;
+                // Sign fresh message for REST auth (wallet.signature may be stale/missing after refresh)
+                const msg = `Sign in to The Reef\nAddress: ${wallet.address}\nTimestamp: ${Date.now()}`;
+                const sig = await signer.signMessage(msg);
                 const resp = await fetch(`/api/agent/${wallet.address}/claim`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', 'x-wallet-signature': sig, 'x-wallet-message': msg },
