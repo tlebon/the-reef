@@ -40,6 +40,8 @@ const REEF_RESOURCE_ABI = [
   'function burnResource(address from, uint256 resourceId, uint256 amount) external',
   'function burnLoot(address from, uint256 lootId) external',
   'function balanceOf(address account, uint256 id) view returns (uint256)',
+  'function claimNonce(address) view returns (uint256)',
+  'function claimResources(address to, uint256[] ids, uint256[] amounts, uint256 nonce, uint256 deadline, bytes signature) external',
   'event ResourceMinted(address indexed to, uint256 indexed tokenId, uint256 amount)',
 ];
 
