@@ -39,9 +39,35 @@ export default function App() {
 
     s.on('world:state', (state) => {
       setWorldState(state);
-      // Clear stale agent ID if agent no longer exists on server
+
+      // Try to find our agent by wallet address or saved ID
       const savedId = localStorage.getItem('reef-agent-id');
-      if (savedId && !state.agents[savedId]) {
+      const savedWallet = (() => {
+        try { return JSON.parse(localStorage.getItem('reef-wallet'))?.address; } catch { return null; }
+      })();
+
+      if (savedId && state.agents[savedId]) {
+        // Agent ID still valid
+        return;
+      }
+
+      // Try to find by wallet address
+      if (savedWallet) {
+        const found = Object.values(state.agents).find(a =>
+          a.ownerWallet?.toLowerCase() === savedWallet.toLowerCase() ||
+          a.delegateWallet?.toLowerCase() === savedWallet.toLowerCase()
+        );
+        if (found) {
+          setMyAgentId(found.id);
+          localStorage.setItem('reef-agent-id', found.id);
+          setShowWelcome(false);
+          setShowJoin(false);
+          return;
+        }
+      }
+
+      // No agent found — clear stale data
+      if (savedId) {
         localStorage.removeItem('reef-agent-id');
         setMyAgentId(null);
         setShowWelcome(true);
