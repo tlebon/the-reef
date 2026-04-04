@@ -250,7 +250,10 @@ io.on('connection', (socket) => {
       (async () => {
         try {
           await ens.registerSubname(name, walletAddress, { archetype });
-          if (walletAddress) await chain.registerAgent(walletAddress);
+          if (walletAddress) {
+            await chain.registerAgent(walletAddress);
+            await chain.mintAgentNFT(walletAddress, name, archetype, result.agent.ensName || '');
+          }
         } catch (err) {
           console.error(`  On-chain registration error: ${err.message}`);
         }
@@ -335,6 +338,18 @@ io.on('connection', (socket) => {
     // All other commands — no payment
     const result = world.execute(agentId, command);
     socket.emit('agent:result', { command, result });
+
+    // Mint tile NFT on successful build
+    if (result.ok && result.isHome !== undefined) {
+      const agent = world.getAgent(agentId);
+      if (agent?.ownerWallet) {
+        const tile = world.getTile(agent.x, agent.y);
+        if (tile) {
+          const resourceMap = { coral: 0, crystal: 1, kelp: 2, shell: 3 };
+          chain.mintTileNFT(agent.ownerWallet, tile.x, tile.y, resourceMap[tile.resource] ?? 0, tile.symbol).catch(() => {});
+        }
+      }
+    }
 
     // Check quest completion after every action
     if (result.ok) {
