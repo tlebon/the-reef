@@ -50,8 +50,10 @@ const NPC_SAYINGS = {
  * Skips if already seeded (idempotent).
  */
 export function seedWorld(world) {
-  // Guard against double-seeding
-  if (world.bounties.some(b => b.posterId === 'system')) {
+  // Guard against double-seeding (check both bounties and NPCs)
+  const hasSeededBounties = world.bounties.some(b => b.posterId === 'system');
+  const hasSeededNPCs = NPC_AGENTS.some(npc => world.getAgent(npc.id));
+  if (hasSeededBounties && hasSeededNPCs) {
     console.log('  Seed: already seeded, skipping');
     return;
   }
@@ -87,6 +89,7 @@ export function seedWorld(world) {
     const buildResult = world.execute(npc.id, 'BUILD @');
     if (buildResult.error) {
       console.error(`  Seed: ${npc.name} failed to build — ${buildResult.error}`);
+      world.agents.delete(npc.id); // clean up orphaned agent
       continue;
     }
 
