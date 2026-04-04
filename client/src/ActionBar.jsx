@@ -229,7 +229,7 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
                 const sig = await signer.signMessage(msg);
                 const resp = await fetch(`/api/agent/${wallet.address}/claim`, {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'x-wallet-signature': sig, 'x-wallet-message': msg },
+                  headers: { 'Content-Type': 'application/json', 'x-wallet-signature': sig, 'x-wallet-message': encodeURIComponent(msg) },
                   body: JSON.stringify({ nonce: 0 }),
                 });
                 const claim = await resp.json();

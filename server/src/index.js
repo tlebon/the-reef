@@ -146,7 +146,9 @@ app.get('/api/archetypes', (req, res) => {
 function verifyWalletAuth(req, res, next) {
   const walletAddress = req.params.walletAddress;
   const signature = req.headers['x-wallet-signature'];
-  const message = req.headers['x-wallet-message'];
+  const rawMessage = req.headers['x-wallet-message'];
+  // Decode URI-encoded message (newlines are invalid in HTTP headers)
+  const message = rawMessage ? decodeURIComponent(rawMessage) : rawMessage;
 
   if (!signature || !message) {
     return res.status(401).json({ error: 'Missing x-wallet-signature and x-wallet-message headers' });
