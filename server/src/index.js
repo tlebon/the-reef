@@ -10,6 +10,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { World } from './world.js';
 import { ChainConnector } from './chain.js';
+import { seedWorld, tickNPCs } from './seed.js';
 
 const PORT = process.env.PORT || 3001;
 const TICK_INTERVAL = parseInt(process.env.TICK_INTERVAL) || 12_000;
@@ -113,6 +114,7 @@ io.on('connection', (socket) => {
 
 setInterval(async () => {
   world.advanceTick();
+  tickNPCs(world);
   const state = world.getState();
   const hash = world.getStateHash();
 
@@ -128,6 +130,7 @@ setInterval(async () => {
 
 async function start() {
   await chain.init();
+  seedWorld(world);
 
   httpServer.listen(PORT, () => {
     console.log(`
