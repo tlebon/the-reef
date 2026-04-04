@@ -63,8 +63,9 @@ export const MODAL_CONFIGS = {
     fields: [
       { key: 'give', label: 'Give Resource', placeholder: 'Select resource', options: ['coral', 'crystal', 'kelp', 'shell'] },
       { key: 'want', label: 'Want Resource', placeholder: 'Select resource', options: ['coral', 'crystal', 'kelp', 'shell'] },
+      { key: 'giveAmount', label: 'Amount', placeholder: '1', defaultValue: '1' },
     ],
-    toCommand: (v) => (v.give && v.want) ? `INVOKE_SERVICE ${ownerName} exchange ${v.give} ${v.want}` : null,
+    toCommand: (v) => (v.give && v.want) ? `INVOKE_SERVICE ${ownerName} exchange ${v.give} ${v.want} ${v.giveAmount || 1}` : null,
   }),
   'combine': (ownerName) => ({
     title: `Combine with ${ownerName}`,
