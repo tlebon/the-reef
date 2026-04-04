@@ -40,6 +40,9 @@ export default function InputModal({ title, fields, onConfirm, onCancel, sanitiz
     onConfirm(values);
   };
 
+  // Disable confirm if any required field (no defaultValue) is empty
+  const requiredEmpty = fields.some(f => !f.defaultValue && !values[f.key]?.trim());
+
   return (
     <div style={styles.overlay} onClick={onCancel}>
       <form style={styles.modal} onClick={e => e.stopPropagation()} onSubmit={handleSubmit} role="dialog" aria-modal="true" aria-label={title}>
@@ -63,7 +66,7 @@ export default function InputModal({ title, fields, onConfirm, onCancel, sanitiz
 
         <div style={styles.buttons}>
           <button type="button" style={styles.cancelBtn} onClick={onCancel}>Cancel</button>
-          <button type="submit" style={styles.confirmBtn}>Confirm</button>
+          <button type="submit" style={{ ...styles.confirmBtn, opacity: requiredEmpty ? 0.4 : 1 }} disabled={requiredEmpty}>Confirm</button>
         </div>
       </form>
     </div>

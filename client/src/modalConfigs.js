@@ -13,9 +13,11 @@ export const sanitizeInput = (key, value) => {
   if (key === 'give' || key === 'want' || key === 'resource') {
     return value.replace(/[^a-z]/g, '');
   }
-  // Price/reward fields: digits and decimal point only
+  // Price/reward fields: digits and single decimal point only
   if (key === 'price' || key === 'reward') {
-    return value.replace(/[^0-9.]/g, '');
+    const stripped = value.replace(/[^0-9.]/g, '');
+    const parts = stripped.split('.');
+    return parts.length <= 2 ? stripped : parts[0] + '.' + parts.slice(1).join('');
   }
   // All other fields: strip control characters and newlines
   return value.replace(/[\x00-\x1f]/g, '');
