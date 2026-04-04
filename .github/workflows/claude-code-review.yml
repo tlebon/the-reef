@@ -3,21 +3,14 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,9 +29,53 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
+          use_sticky_comment: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
 
+            Review this pull request. Use `gh pr diff` to read the diff and `gh pr view` for context.
+
+            Evaluate:
+            - Code quality and best practices
+            - Potential bugs or issues
+            - Performance considerations
+            - Security concerns
+            - Test coverage
+
+            Use the repository's CLAUDE.md for guidance on style and conventions if available.
+
+            Write your review to a temp file using the Write tool, then post it with:
+              gh pr comment <PR_NUMBER> --body-file /tmp/review.md
+            The review MUST start with "## Code Review".
+
+            IMPORTANT:
+            - Do NOT post file contents, test results, or any other non-review content as comments.
+            - Do NOT post multiple comments. Post exactly one review comment.
+            - If a tool is unavailable, skip it — do NOT work around it by posting content as comments.
+
+          claude_args: '--allowed-tools "Read,Write,Glob,Grep,Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
+
+      - name: Post review fallback
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "No output file found"
+            exit 0
+          fi
+          # Extract the result text - handle both object and array formats
+          RESULT=$(jq -r 'if type == "array" then .[-1].result // empty elif type == "object" then .result // empty else empty end' "$OUTPUT_FILE" 2>/dev/null || true)
+          if [ -z "$RESULT" ]; then
+            # Try extracting assistant message content from the conversation
+            RESULT=$(jq -r '[.[] | select(.type == "assistant") | .message.content[] | select(.type == "text") | .text] | last // empty' "$OUTPUT_FILE" 2>/dev/null || true)
+          fi
+          if [ -n "$RESULT" ]; then
+            # Write to temp file to avoid shell interpretation of markdown headers (#)
+            echo "$RESULT" > /tmp/review-body.md
+            gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/review-body.md
+          else
+            echo "No review content found in output"
+          fi
