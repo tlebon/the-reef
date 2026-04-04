@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 /**
  * Reusable modal that replaces browser prompt() calls.
@@ -8,7 +8,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
  *   fields   - array of { key, label, placeholder?, defaultValue? }
  *   onConfirm(values) - called with { [key]: value } map
  *   onCancel()
- *   validate(key, value) - optional, returns sanitized value
+ *   sanitize(key, value) - optional, returns sanitized value
  */
 export default function InputModal({ title, fields, onConfirm, onCancel, sanitize }) {
   const [values, setValues] = useState(() => {
