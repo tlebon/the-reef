@@ -398,6 +398,8 @@ io.on('connection', (socket) => {
       if (existing) {
         // Reconnect to existing agent
         socket.agentId = existing.id;
+        // Sync balance from on-chain USDC
+        payments.syncBalance(existing.id).catch(() => {});
         socket.emit('agent:registered', { agent: existing, tile: world.getTile(existing.x, existing.y) });
 
         // Mint NFT for existing agents that don't have one yet
@@ -447,6 +449,8 @@ io.on('connection', (socket) => {
       socket.emit('agent:error', result);
     } else {
       socket.agentId = result.agent.id;
+      // Sync balance from on-chain USDC
+      payments.syncBalance(result.agent.id).catch(() => {});
 
       socket.emit('agent:registered', result);
       io.emit('world:agent_joined', { agent: result.agent, tile: result.tile });

@@ -20,8 +20,8 @@ const NPC_AGENTS = [
     name: 'Barnacle',
     archetype: 'merchant',
     services: [
-      { name: 'exchange', price: 0, description: 'Trade any resource 1:1 at baseline rates' },
-      { name: 'recharge', price: 0, description: 'Restore full energy' },
+      { name: 'exchange', price: 0.005, description: 'Trade any resource 1:1 at baseline rates' },
+      { name: 'recharge', price: 0.01, description: 'Restore full energy' },
     ],
   },
   {
@@ -29,7 +29,7 @@ const NPC_AGENTS = [
     name: 'Polyp',
     archetype: 'crafter',
     services: [
-      { name: 'combine', price: 0, description: 'Combine 3 of any resource into a rare material' },
+      { name: 'combine', price: 0.01, description: 'Combine 3 of any resource into 1 rare material' },
     ],
   },
 ];
