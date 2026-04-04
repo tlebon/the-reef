@@ -146,6 +146,17 @@ contract ReefResource is ERC1155, Ownable {
     }
 
     /**
+     * @notice Burn a loot item (for crafting, consuming, etc).
+     */
+    function burnLoot(address from, uint256 lootId) external onlyOwner {
+        require(lootId >= 100, "ReefResource: not a loot item");
+        require(_totalSupply[lootId] > 0, "ReefResource: loot does not exist");
+        _burn(from, lootId, 1);
+        _totalSupply[lootId] -= 1;
+        emit ResourceBurned(from, lootId, 1);
+    }
+
+    /**
      * @notice Batch burn multiple resources (tile minting costs multiple types).
      */
     function burnResourceBatch(
