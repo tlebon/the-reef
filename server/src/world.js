@@ -6,6 +6,7 @@
  */
 
 import crypto from 'crypto';
+import fs from 'fs';
 
 const RESOURCES = ['coral', 'crystal', 'kelp', 'shell'];
 
@@ -207,7 +208,7 @@ export class World {
         energy: agent.energy,
         inventory: agent.inventory,
         tilesOwned: agent.tilesOwned,
-        buildCap: this._buildCap(agent),
+        tilesOwned: agent.tilesOwned,
         reputation: { transactions: agent.reputation.transactions, avgRating: this._avgRating(agent) },
       },
       tiles: visibleTiles,
@@ -235,13 +236,6 @@ export class World {
     const tile = this.getTile(nx, ny);
     if (!tile) return { error: `Can't move ${direction} — unexplored void` };
 
-    // Check for collision
-    for (const a of this.agents.values()) {
-      if (a.id !== agent.id && a.x === nx && a.y === ny) {
-        return { error: `Can't move ${direction} — ${a.name} is there` };
-      }
-    }
-
     agent.energy -= cost;
     agent.x = nx;
     agent.y = ny;
@@ -260,43 +254,68 @@ export class World {
     return { ok: true, message: `You said: "${text}"` };
   }
 
+  // Resource costs to mint a tile, based on the tile's resource type.
+  // You need a mix of resources you may not have — forcing trade.
+  static TILE_MINT_COSTS = {
+    coral:   { coral: 3, crystal: 2, kelp: 0, shell: 1 },
+    crystal: { coral: 1, crystal: 3, kelp: 2, shell: 0 },
+    kelp:    { coral: 0, crystal: 1, kelp: 3, shell: 2 },
+    shell:   { coral: 2, crystal: 0, kelp: 1, shell: 3 },
+  };
+
   _cmdBuild(agent, symbol) {
     const tile = this.getTile(agent.x, agent.y);
     if (!tile) return { error: 'No tile here' };
 
-    if (tile.built && tile.owner !== agent.id) {
-      return { error: `This tile is owned by another agent` };
+    if (tile.built) {
+      return { error: tile.owner === agent.id ? 'You already built here' : 'This tile is owned by another agent' };
     }
 
-    if (!tile.built && agent.tilesOwned >= this._buildCap(agent)) {
-      return { error: `Build cap reached (${this._buildCap(agent)}). Earn more reputation to build more.` };
+    // First tile is free
+    const isFirstTile = agent.tilesOwned === 0;
+
+    if (!isFirstTile) {
+      // Check resource costs
+      const costs = World.TILE_MINT_COSTS[tile.resource] || {};
+      const missing = [];
+      for (const [res, amount] of Object.entries(costs)) {
+        if (amount > 0 && (agent.inventory[res] || 0) < amount) {
+          missing.push(`${amount} ${res} (have ${agent.inventory[res] || 0})`);
+        }
+      }
+      if (missing.length > 0) {
+        return { error: `Need resources to mint this ${tile.resource} tile: ${missing.join(', ')}` };
+      }
+
+      // Deduct resources
+      for (const [res, amount] of Object.entries(costs)) {
+        if (amount > 0) {
+          agent.inventory[res] -= amount;
+        }
+      }
     }
 
-    const cost = ARCHETYPES[agent.archetype].buildCost;
-    if (agent.energy < cost) return { error: `Not enough energy (need ${cost}, have ${agent.energy})` };
+    const energyCost = ARCHETYPES[agent.archetype].buildCost;
+    if (agent.energy < energyCost) return { error: `Not enough energy (need ${energyCost}, have ${agent.energy})` };
 
-    agent.energy -= cost;
-
-    const wasNewBuild = !tile.built;
+    agent.energy -= energyCost;
     tile.built = true;
     tile.owner = agent.id;
     tile.symbol = symbol || '#';
+    agent.tilesOwned++;
 
-    if (wasNewBuild) {
-      agent.tilesOwned++;
-      // Reveal neighbors
-      const revealed = this._revealNeighbors(agent.x, agent.y);
-      this._log(`${agent.name} built '${tile.symbol}' at (${agent.x},${agent.y}), revealed ${revealed.length} new tiles`);
-      return {
-        ok: true,
-        message: `Built '${tile.symbol}' at (${agent.x},${agent.y})`,
-        revealed: revealed.map(t => ({ x: t.x, y: t.y, resource: t.resource })),
-        energy: agent.energy,
-      };
-    }
-
-    this._log(`${agent.name} rebuilt '${tile.symbol}' at (${agent.x},${agent.y})`);
-    return { ok: true, message: `Rebuilt '${tile.symbol}' at (${agent.x},${agent.y})`, energy: agent.energy };
+    const revealed = this._revealNeighbors(agent.x, agent.y);
+    const msg = isFirstTile
+      ? `Claimed home tile at (${agent.x},${agent.y})`
+      : `Minted ${tile.resource} tile at (${agent.x},${agent.y})`;
+    this._log(`${agent.name} ${msg}, revealed ${revealed.length} new tiles`);
+    return {
+      ok: true,
+      message: msg,
+      revealed: revealed.map(t => ({ x: t.x, y: t.y, resource: t.resource })),
+      energy: agent.energy,
+      isHome: isFirstTile,
+    };
   }
 
   _cmdTrade(agent, args) {
@@ -498,5 +517,43 @@ export class World {
     const entry = `[tick:${String(this.tick).padStart(4, '0')}] ${event}`;
     this.log.push(entry);
     if (this.log.length > 500) this.log = this.log.slice(-500);
+  }
+
+  // ── Persistence ────────────────────────────────────────────────────
+
+  save(path) {
+    const data = JSON.stringify(this.getState(), null, 2);
+    fs.writeFileSync(path, data);
+  }
+
+  load(path) {
+    if (!fs.existsSync(path)) return false;
+
+    const data = JSON.parse(fs.readFileSync(path, 'utf-8'));
+    this.tick = data.tick || 0;
+
+    // Restore tiles
+    for (const [key, tdata] of Object.entries(data.tiles || {})) {
+      this.tiles.set(key, tdata);
+    }
+
+    // Restore agents
+    for (const [id, adata] of Object.entries(data.agents || {})) {
+      this.agents.set(id, {
+        ...adata,
+        reputation: {
+          transactions: adata.reputation?.transactions || 0,
+          totalRating: adata.reputation?.totalRating || 0,
+          count: adata.reputation?.count || 0,
+        },
+      });
+    }
+
+    // Restore bounties
+    this.bounties = data.bounties || [];
+    this.messages = data.messages || [];
+
+    console.log(`  World: loaded from ${path} (tick ${this.tick}, ${this.agents.size} agents, ${this.tiles.size} tiles)`);
+    return true;
   }
 }

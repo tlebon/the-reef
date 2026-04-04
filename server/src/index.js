@@ -11,7 +11,11 @@ import { Server } from 'socket.io';
 import { World } from './world.js';
 import { ChainConnector } from './chain.js';
 import { seedWorld, tickNPCs } from './seed.js';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SAVE_PATH = join(__dirname, '..', 'world-state.json');
 const PORT = process.env.PORT || 3001;
 const TICK_INTERVAL = parseInt(process.env.TICK_INTERVAL) || 12_000;
 
@@ -112,25 +116,43 @@ io.on('connection', (socket) => {
 
 // ── Tick Loop ────────────────────────────────────────────────────────
 
-setInterval(async () => {
+function processTick(blockNumber) {
   world.advanceTick();
   tickNPCs(world);
   const state = world.getState();
   const hash = world.getStateHash();
 
-  io.emit('world:tick', { tick: world.tick, hash, state });
+  io.emit('world:tick', { tick: world.tick, block: blockNumber || null, hash, state });
 
-  // Commit state hash on-chain
-  await chain.commitTick(world.tick, hash);
+  // Commit state hash on-chain (fire and forget)
+  chain.commitTick(world.tick, hash);
 
-  console.log(`Tick ${world.tick} | ${world.agents.size} agents | ${world.tiles.size} tiles | hash: ${hash.slice(0, 16)}...`);
-}, TICK_INTERVAL);
+  // Persist world state
+  world.save(SAVE_PATH);
+
+  const src = blockNumber ? `block #${blockNumber}` : 'interval';
+  console.log(`Tick ${world.tick} (${src}) | ${world.agents.size} agents | ${world.tiles.size} tiles | hash: ${hash.slice(0, 16)}...`);
+}
 
 // ── Start ────────────────────────────────────────────────────────────
 
 async function start() {
   await chain.init();
-  seedWorld(world);
+
+  // Load saved state or seed fresh
+  const loaded = world.load(SAVE_PATH);
+  if (!loaded) {
+    seedWorld(world);
+  }
+
+  // Sync ticks to blocks if chain is connected, otherwise use interval
+  const blockSync = chain.onNewBlock((blockNumber) => {
+    processTick(blockNumber);
+  });
+
+  if (!blockSync) {
+    setInterval(() => processTick(null), TICK_INTERVAL);
+  }
 
   httpServer.listen(PORT, () => {
     console.log(`
@@ -139,7 +161,7 @@ async function start() {
   │                                     │
   │  REST API:    http://localhost:${PORT} │
   │  WebSocket:   ws://localhost:${PORT}   │
-  │  Tick interval: ${TICK_INTERVAL / 1000}s               │
+  │  Ticks: ${blockSync ? 'synced to blocks' : `${TICK_INTERVAL / 1000}s interval`}          │
   │  Chain: ${chain.enabled ? 'connected' : 'local-only'}             │
   └─────────────────────────────────────┘
     `);

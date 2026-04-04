@@ -14,7 +14,7 @@ const ARCHETYPE_COLORS = {
   crafter:  '#a29bfe',
 };
 
-export default function WorldGrid({ tiles, agents, onSelectAgent }) {
+export default function WorldGrid({ tiles, agents, onSelectAgent, onSelectTile, myAgentId }) {
   // Compute grid bounds from tiles
   const bounds = useMemo(() => {
     const coords = Object.values(tiles).map(t => ({ x: t.x, y: t.y }));
@@ -54,8 +54,10 @@ export default function WorldGrid({ tiles, agents, onSelectAgent }) {
           const px = tile.x * TILE_SIZE;
           const py = tile.y * TILE_SIZE;
 
+          const isMyAgent = agent && agent.id === myAgentId;
+
           return (
-            <g key={key}>
+            <g key={key} onClick={() => agent ? onSelectAgent(agent) : onSelectTile(tile)} style={{ cursor: 'pointer' }}>
               {/* Tile background */}
               <rect
                 x={px + 1}
@@ -63,8 +65,8 @@ export default function WorldGrid({ tiles, agents, onSelectAgent }) {
                 width={TILE_SIZE - 2}
                 height={TILE_SIZE - 2}
                 fill={tile.built ? RESOURCE_COLORS[tile.resource] + '40' : '#0f1623'}
-                stroke={tile.built ? RESOURCE_COLORS[tile.resource] + '80' : '#1a2035'}
-                strokeWidth={1}
+                stroke={isMyAgent ? '#00d4aa' : tile.built ? RESOURCE_COLORS[tile.resource] + '80' : '#1a2035'}
+                strokeWidth={isMyAgent ? 2 : 1}
                 rx={2}
               />
 
@@ -78,8 +80,8 @@ export default function WorldGrid({ tiles, agents, onSelectAgent }) {
                 />
               )}
 
-              {/* Built symbol */}
-              {tile.built && !agent && (
+              {/* Built symbol — always show */}
+              {tile.built && (
                 <text
                   x={px + TILE_SIZE / 2}
                   y={py + TILE_SIZE / 2 + 1}
@@ -93,26 +95,24 @@ export default function WorldGrid({ tiles, agents, onSelectAgent }) {
                 </text>
               )}
 
-              {/* Agent */}
+              {/* Agent — small indicator in top-right corner */}
               {agent && (
-                <g
-                  onClick={() => onSelectAgent(agent)}
-                  style={{ cursor: 'pointer' }}
-                >
+                <g>
                   <circle
-                    cx={px + TILE_SIZE / 2}
-                    cy={py + TILE_SIZE / 2}
-                    r={TILE_SIZE / 3}
+                    cx={px + TILE_SIZE - 8}
+                    cy={py + 8}
+                    r={6}
                     fill={ARCHETYPE_COLORS[agent.archetype]}
-                    opacity={0.9}
+                    stroke={isMyAgent ? '#00d4aa' : '#0a0e17'}
+                    strokeWidth={1.5}
                   />
                   <text
-                    x={px + TILE_SIZE / 2}
-                    y={py + TILE_SIZE / 2 + 1}
+                    x={px + TILE_SIZE - 8}
+                    y={py + 9}
                     textAnchor="middle"
                     dominantBaseline="middle"
                     fill="#0a0e17"
-                    fontSize="11"
+                    fontSize="7"
                     fontWeight="bold"
                     fontFamily="monospace"
                   >

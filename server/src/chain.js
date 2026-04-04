@@ -34,6 +34,24 @@ export class ChainConnector {
     this.reefReputation = null;
   }
 
+  /**
+   * Subscribe to new blocks. Calls onBlock(blockNumber) for each new block.
+   * Falls back to polling if WebSocket subscription isn't available.
+   */
+  onNewBlock(callback) {
+    if (!this.enabled || !this.provider) {
+      console.log('  Chain: block sync disabled (no provider). Using interval ticks.');
+      return false;
+    }
+
+    this.provider.on('block', (blockNumber) => {
+      callback(blockNumber);
+    });
+
+    console.log('  Chain: subscribed to new blocks');
+    return true;
+  }
+
   async init() {
     const rpcUrl = process.env.SEPOLIA_RPC_URL;
     const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
