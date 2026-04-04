@@ -177,7 +177,24 @@ export default function App() {
       wallet={wallet}
       onConnectMetaMask={async () => {
         const w = await connectMetaMask();
-        if (w) addActivity(`Wallet connected: ${w.address.slice(0, 10)}...`);
+        if (w && worldState) {
+          addActivity(`Wallet connected: ${w.address.slice(0, 10)}...`);
+          // Check if this wallet already has an agent
+          const found = Object.values(worldState.agents || {}).find(a =>
+            a.ownerWallet?.toLowerCase() === w.address.toLowerCase() ||
+            a.delegateWallet?.toLowerCase() === w.address.toLowerCase()
+          );
+          if (found) {
+            setMyAgentId(found.id);
+            localStorage.setItem('reef-agent-id', found.id);
+            setShowWelcome(false);
+            setShowJoin(false);
+            addActivity(`Welcome back, ${found.name}!`);
+          } else {
+            setShowWelcome(false);
+            setShowJoin(true);
+          }
+        }
       }}
       onCreateWallet={async () => {
         try {
@@ -185,6 +202,9 @@ export default function App() {
           addActivity(`New wallet created: ${w.address.slice(0, 10)}...`);
           if (w.privateKey) {
             setNewWalletKey(w);
+          } else {
+            setShowWelcome(false);
+            setShowJoin(true);
           }
         } catch (err) {
           addActivity(`Error creating wallet: ${err.message}`);
