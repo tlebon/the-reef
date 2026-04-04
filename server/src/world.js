@@ -414,10 +414,16 @@ export class World {
 
     agent.energy -= SCAVENGE_COST;
 
+    // 40% chance to find nothing — scavenging is risky
+    if (Math.random() < 0.4) {
+      this._log(`${agent.name} scavenged at (${agent.x},${agent.y}) — found nothing`);
+      return { ok: true, message: 'Scavenged... found nothing this time.', energy: agent.energy };
+    }
+
     // Tile owner gets a cut of resources found
     const tileOwner = tile.owner ? this.agents.get(tile.owner) : null;
 
-    // Always get some of the tile's resource
+    // Get some of the tile's resource
     const baseAmount = tile.resource === ARCHETYPES[agent.archetype]?.affinity ? 3 : 1;
     agent.inventory[tile.resource] = (agent.inventory[tile.resource] || 0) + baseAmount;
 
