@@ -59,6 +59,24 @@ describe("ReefResource", function () {
       .to.be.revertedWithCustomError(resource, "OwnableUnauthorizedAccount");
   });
 
+  it("should burn loot items", async function () {
+    await resource.mintLoot(user1.address, "Void Crystal", "legendary", 1);
+    expect(await resource.balanceOf(user1.address, 100)).to.equal(1);
+    await resource.burnLoot(user1.address, 100);
+    expect(await resource.balanceOf(user1.address, 100)).to.equal(0);
+  });
+
+  it("should reject burning base resource as loot", async function () {
+    await resource.mintResource(user1.address, 0, 10);
+    await expect(resource.burnLoot(user1.address, 0))
+      .to.be.revertedWith("ReefResource: not a loot item");
+  });
+
+  it("should reject burning nonexistent loot", async function () {
+    await expect(resource.burnLoot(user1.address, 100))
+      .to.be.revertedWith("ReefResource: loot does not exist");
+  });
+
   it("should increment loot IDs", async function () {
     await resource.mintLoot(user1.address, "Item1", "common", 0);
     await resource.mintLoot(user1.address, "Item2", "rare", 1);
