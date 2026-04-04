@@ -9,9 +9,10 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { World } from './world.js';
+import { ChainConnector } from './chain.js';
 
 const PORT = process.env.PORT || 3001;
-const TICK_INTERVAL = 12_000; // 12 seconds, matching Sepolia block time
+const TICK_INTERVAL = parseInt(process.env.TICK_INTERVAL) || 12_000;
 
 const app = express();
 app.use(express.json());
@@ -22,6 +23,7 @@ const io = new Server(httpServer, {
 });
 
 const world = new World();
+const chain = new ChainConnector();
 
 // ── REST API ─────────────────────────────────────────────────────────
 
@@ -70,13 +72,18 @@ io.on('connection', (socket) => {
   socket.emit('world:state', world.getState());
 
   // Agent registration
-  socket.on('agent:register', ({ id, name, archetype }) => {
+  socket.on('agent:register', async ({ id, name, archetype, walletAddress }) => {
     const result = world.addAgent(id, name, archetype);
     if (result.error) {
       socket.emit('agent:error', result);
     } else {
       socket.emit('agent:registered', result);
       io.emit('world:agent_joined', { agent: result.agent, tile: result.tile });
+
+      // Register on-chain if wallet address provided
+      if (walletAddress) {
+        await chain.registerAgent(walletAddress);
+      }
     }
   });
 
@@ -104,26 +111,36 @@ io.on('connection', (socket) => {
 
 // ── Tick Loop ────────────────────────────────────────────────────────
 
-setInterval(() => {
+setInterval(async () => {
   world.advanceTick();
   const state = world.getState();
   const hash = world.getStateHash();
 
   io.emit('world:tick', { tick: world.tick, hash, state });
 
+  // Commit state hash on-chain
+  await chain.commitTick(world.tick, hash);
+
   console.log(`Tick ${world.tick} | ${world.agents.size} agents | ${world.tiles.size} tiles | hash: ${hash.slice(0, 16)}...`);
 }, TICK_INTERVAL);
 
 // ── Start ────────────────────────────────────────────────────────────
 
-httpServer.listen(PORT, () => {
-  console.log(`
+async function start() {
+  await chain.init();
+
+  httpServer.listen(PORT, () => {
+    console.log(`
   ┌─────────────────────────────────────┐
-  │  🪸  The Reef — Server               │
+  │  The Reef — Server                  │
   │                                     │
   │  REST API:    http://localhost:${PORT} │
   │  WebSocket:   ws://localhost:${PORT}   │
   │  Tick interval: ${TICK_INTERVAL / 1000}s               │
+  │  Chain: ${chain.enabled ? 'connected' : 'local-only'}             │
   └─────────────────────────────────────┘
-  `);
-});
+    `);
+  });
+}
+
+start();
