@@ -66,6 +66,55 @@ describe("ReefResource", function () {
     expect(await resource.balanceOf(user1.address, 101)).to.equal(1);
     expect(await resource.nextLootId()).to.equal(102);
   });
+
+  it("should claim resources with server signature", async function () {
+    const ids = [0, 1]; // coral, crystal
+    const amounts = [10, 5];
+    const nonce = 0;
+
+    // Server signs the claim
+    const hash = ethers.solidityPackedKeccak256(
+      ["address", "uint256[]", "uint256[]", "uint256"],
+      [user1.address, ids, amounts, nonce]
+    );
+    const signature = await owner.signMessage(ethers.getBytes(hash));
+
+    await resource.connect(user1).claimResources(user1.address, ids, amounts, nonce, signature);
+
+    expect(await resource.balanceOf(user1.address, 0)).to.equal(10);
+    expect(await resource.balanceOf(user1.address, 1)).to.equal(5);
+    expect(await resource.claimNonce(user1.address)).to.equal(1);
+  });
+
+  it("should reject claim with wrong nonce", async function () {
+    const ids = [0];
+    const amounts = [10];
+    const wrongNonce = 99;
+
+    const hash = ethers.solidityPackedKeccak256(
+      ["address", "uint256[]", "uint256[]", "uint256"],
+      [user1.address, ids, amounts, wrongNonce]
+    );
+    const signature = await owner.signMessage(ethers.getBytes(hash));
+
+    await expect(resource.connect(user1).claimResources(user1.address, ids, amounts, wrongNonce, signature))
+      .to.be.revertedWith("ReefResource: invalid nonce");
+  });
+
+  it("should reject claim for someone else", async function () {
+    const ids = [0];
+    const amounts = [10];
+    const nonce = 0;
+
+    const hash = ethers.solidityPackedKeccak256(
+      ["address", "uint256[]", "uint256[]", "uint256"],
+      [user1.address, ids, amounts, nonce]
+    );
+    const signature = await owner.signMessage(ethers.getBytes(hash));
+
+    await expect(resource.connect(user2).claimResources(user1.address, ids, amounts, nonce, signature))
+      .to.be.revertedWith("ReefResource: can only claim for yourself");
+  });
 });
 
 describe("ReefTile", function () {

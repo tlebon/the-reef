@@ -3,6 +3,8 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 /**
  * @title ReefResource
@@ -16,6 +18,9 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *   100+ = Loot items (minted with rarity metadata)
  */
 contract ReefResource is ERC1155, Ownable {
+    using ECDSA for bytes32;
+    using MessageHashUtils for bytes32;
+
     uint256 public constant CORAL = 0;
     uint256 public constant CRYSTAL = 1;
     uint256 public constant KELP = 2;
@@ -32,10 +37,12 @@ contract ReefResource is ERC1155, Ownable {
 
     mapping(uint256 => LootMeta) public lootMeta;
     mapping(uint256 => uint256) private _totalSupply;
+    mapping(address => uint256) public claimNonce; // prevents replay
 
     event ResourceMinted(address indexed to, uint256 indexed tokenId, uint256 amount);
     event LootMinted(address indexed to, uint256 indexed tokenId, string name, string rarity);
     event ResourceBurned(address indexed from, uint256 indexed tokenId, uint256 amount);
+    event ResourcesClaimed(address indexed to, uint256[] ids, uint256[] amounts, uint256 nonce);
 
     constructor() ERC1155("") Ownable(msg.sender) {}
 
@@ -76,6 +83,41 @@ contract ReefResource is ERC1155, Ownable {
         _totalSupply[tokenId] = 1;
         emit LootMinted(to, tokenId, lootName, rarity);
         return tokenId;
+    }
+
+    /**
+     * @notice Claim accumulated resources — user pays gas, server signs the approval.
+     *         Batches many small rewards into one on-chain transaction.
+     * @param to        Recipient address (must match msg.sender)
+     * @param ids       Token IDs to claim
+     * @param amounts   Amounts per token ID
+     * @param nonce     Must match claimNonce[to] (prevents replay)
+     * @param signature Server's signature over (to, ids, amounts, nonce)
+     */
+    function claimResources(
+        address to,
+        uint256[] calldata ids,
+        uint256[] calldata amounts,
+        uint256 nonce,
+        bytes calldata signature
+    ) external {
+        require(msg.sender == to, "ReefResource: can only claim for yourself");
+        require(nonce == claimNonce[to], "ReefResource: invalid nonce");
+        require(ids.length == amounts.length, "ReefResource: length mismatch");
+
+        // Verify server signature
+        bytes32 hash = keccak256(abi.encodePacked(to, ids, amounts, nonce));
+        bytes32 ethHash = hash.toEthSignedMessageHash();
+        require(ethHash.recover(signature) == owner(), "ReefResource: invalid signature");
+
+        claimNonce[to]++;
+        _mintBatch(to, ids, amounts, "");
+
+        for (uint256 i = 0; i < ids.length; i++) {
+            _totalSupply[ids[i]] += amounts[i];
+        }
+
+        emit ResourcesClaimed(to, ids, amounts, nonce);
     }
 
     /**
