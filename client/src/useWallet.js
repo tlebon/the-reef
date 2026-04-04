@@ -8,12 +8,16 @@ import { ethers } from 'ethers';
 
 export function useWallet() {
   const [wallet, setWallet] = useState(() => {
-    const saved = localStorage.getItem('reef-wallet');
-    if (!saved) return null;
-    const parsed = JSON.parse(saved);
-    // Don't restore generated wallets — private key should not persist
-    if (parsed.type === 'generated') return null;
-    return parsed;
+    try {
+      const saved = localStorage.getItem('reef-wallet');
+      if (!saved) return null;
+      const parsed = JSON.parse(saved);
+      if (parsed.type === 'generated') return null;
+      return parsed;
+    } catch {
+      localStorage.removeItem('reef-wallet');
+      return null;
+    }
   });
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState(null);

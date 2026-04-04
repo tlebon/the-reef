@@ -122,8 +122,9 @@ export class World {
   linkDelegate(agentId, delegateWallet) {
     const agent = this.agents.get(agentId);
     if (!agent) return { error: 'Unknown agent' };
+    if (!delegateWallet) return { error: 'Delegate wallet address required' };
     agent.delegateWallet = delegateWallet;
-    this._log(`${agent.name} linked delegate wallet ${delegateWallet.slice(0, 10)}...`);
+    this._log(`${agent.name} linked delegate wallet ${String(delegateWallet).slice(0, 10)}...`);
     return { ok: true, message: `Linked delegate wallet` };
   }
 
