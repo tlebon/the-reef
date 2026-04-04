@@ -121,26 +121,26 @@ export class ENSManager {
       await tx.wait();
       console.log(`  ENS: registered ${safeName}.${this.parentName}`);
 
-      // Set text records while we're still the owner
+      // Set text records while we're still the owner (best effort)
       if (this.resolver) {
-        const records = {
-          archetype: metadata.archetype || '',
-          description: metadata.description || 'Agent in The Reef',
-        };
-        for (const [key, value] of Object.entries(records)) {
-          if (value) {
-            try {
+        try {
+          const records = {
+            archetype: metadata.archetype || '',
+            description: metadata.description || 'Agent in The Reef',
+          };
+          for (const [key, value] of Object.entries(records)) {
+            if (value) {
               const rtx = await this.resolver.setText(subnameNode, key, value);
               await rtx.wait();
-            } catch (err) {
-              console.error(`  ENS: failed to set ${key} — ${err.message}`);
             }
           }
+          console.log(`  ENS: set text records for ${safeName}.${this.parentName}`);
+        } catch (err) {
+          console.error(`  ENS: text records failed (non-blocking) — ${err.message}`);
         }
-        console.log(`  ENS: set text records for ${safeName}.${this.parentName}`);
       }
 
-      // Transfer ownership to the user
+      // Always transfer ownership to the user, even if text records failed
       if (ownerAddress && ownerAddress !== this.signer.address) {
         try {
           const ttx = await this.registry.setSubnodeRecord(

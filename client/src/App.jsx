@@ -86,14 +86,19 @@ export default function App() {
 
     s.on('agent:error', async ({ error }) => {
       if (error.includes('expired') || error.includes('signature')) {
-        addActivity('Session expired — reconnecting wallet...');
+        addActivity('Reconnecting wallet...');
         const w = await connectMetaMask();
         if (w) {
-          addActivity('Wallet reconnected — try again');
+          // Auto-retry registration with fresh signature
+          s.emit('agent:register', {
+            walletAddress: w.address,
+            signature: w.signature,
+            message: w.message,
+          });
+          return;
         }
-      } else {
-        addActivity(`Error: ${error}`);
       }
+      addActivity(`Error: ${error}`);
       setJoining(false);
     });
 

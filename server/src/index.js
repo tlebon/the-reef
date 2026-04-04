@@ -104,7 +104,7 @@ io.on('connection', (socket) => {
         return;
       }
       const sigAge = Date.now() - parseInt(tsMatch[1]);
-      if (sigAge > 60 * 60 * 1000) { // 1 hour
+      if (sigAge > 15 * 60 * 1000) { // 15 minutes
         socket.emit('agent:error', { error: 'Signature expired — please sign again' });
         return;
       }
@@ -253,7 +253,10 @@ async function start() {
     lastBlockTick = Date.now();
     processTick(blockNumber);
     // Second tick halfway through the block
-    setTimeout(() => processTick(blockNumber), TICK_INTERVAL);
+    setTimeout(() => {
+      lastBlockTick = Date.now();
+      processTick(blockNumber);
+    }, TICK_INTERVAL);
   });
 
   // Interval fallback — only fires if no block received recently
