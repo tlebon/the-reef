@@ -7,22 +7,45 @@
  * Each tool calls the agent automation endpoints:
  *   GET  /api/agent/:wallet/state
  *   POST /api/agent/:wallet/action
+ *
+ * Authentication: all requests require x-wallet-signature and x-wallet-message
+ * headers. The caller must set REEF_WALLET_SIGNATURE and REEF_WALLET_MESSAGE
+ * env vars (obtained by signing with the agent's wallet).
  */
 
 const BASE_URL = process.env.REEF_SERVER || 'http://localhost:3001';
 
+function authHeaders() {
+  const sig = process.env.REEF_WALLET_SIGNATURE;
+  const msg = process.env.REEF_WALLET_MESSAGE;
+  const headers = { 'Content-Type': 'application/json' };
+  if (sig) headers['x-wallet-signature'] = sig;
+  if (msg) headers['x-wallet-message'] = msg;
+  return headers;
+}
+
 async function agentState(wallet) {
-  const res = await fetch(`${BASE_URL}/api/agent/${wallet}/state`);
-  return res.json();
+  try {
+    const res = await fetch(`${BASE_URL}/api/agent/${wallet}/state`, { headers: authHeaders() });
+    if (!res.ok) return { error: `HTTP ${res.status}: ${await res.text()}` };
+    return res.json();
+  } catch (err) {
+    return { error: `Network error: ${err.message}` };
+  }
 }
 
 async function agentAction(wallet, command) {
-  const res = await fetch(`${BASE_URL}/api/agent/${wallet}/action`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command }),
-  });
-  return res.json();
+  try {
+    const res = await fetch(`${BASE_URL}/api/agent/${wallet}/action`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ command }),
+    });
+    if (!res.ok) return { error: `HTTP ${res.status}: ${await res.text()}` };
+    return res.json();
+  } catch (err) {
+    return { error: `Network error: ${err.message}` };
+  }
 }
 
 // ── Tool Definitions ────────────────────────────────────────────────
@@ -64,7 +87,7 @@ export const tools = [
       type: 'object',
       properties: {
         wallet: { type: 'string', description: 'Agent wallet address' },
-        symbol: { type: 'string', description: 'Symbol to display on the tile (default: #)', default: '#' },
+        symbol: { type: 'string', description: 'Single character symbol for the tile (default: #)' },
       },
       required: ['wallet'],
     },
@@ -87,16 +110,31 @@ export const tools = [
     },
   },
   {
+    name: 'reef_say',
+    description: 'Say something visible to agents on the same or adjacent tiles.',
+    parameters: {
+      type: 'object',
+      properties: {
+        wallet: { type: 'string', description: 'Agent wallet address' },
+        message: { type: 'string', description: 'Message to say' },
+      },
+      required: ['wallet', 'message'],
+    },
+    async execute({ wallet, message }) {
+      return agentAction(wallet, `SAY ${message}`);
+    },
+  },
+  {
     name: 'reef_trade',
-    description: 'Trade resources with a nearby agent.',
+    description: 'Trade resources with a nearby agent. Both agents must be on the same tile.',
     parameters: {
       type: 'object',
       properties: {
         wallet: { type: 'string', description: 'Agent wallet address' },
         target: { type: 'string', description: 'Name of the agent to trade with' },
-        give_resource: { type: 'string', description: 'Resource to give' },
+        give_resource: { type: 'string', enum: ['coral', 'crystal', 'kelp', 'shell'], description: 'Resource to give' },
         give_amount: { type: 'number', description: 'Amount to give' },
-        want_resource: { type: 'string', description: 'Resource to receive' },
+        want_resource: { type: 'string', enum: ['coral', 'crystal', 'kelp', 'shell'], description: 'Resource to receive' },
         want_amount: { type: 'number', description: 'Amount to receive' },
       },
       required: ['wallet', 'target', 'give_resource', 'give_amount', 'want_resource', 'want_amount'],
@@ -118,6 +156,90 @@ export const tools = [
     },
     async execute({ wallet, resource }) {
       return agentAction(wallet, `REST ${resource}`);
+    },
+  },
+  {
+    name: 'reef_register_service',
+    description: 'Register a service on your built tile. Other agents can invoke and pay for it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        wallet: { type: 'string', description: 'Agent wallet address' },
+        name: { type: 'string', description: 'Service name (alphanumeric, no spaces)' },
+        price: { type: 'string', description: 'Price in USDC (e.g. "0.01")' },
+        description: { type: 'string', description: 'What the service does' },
+      },
+      required: ['wallet', 'name', 'price', 'description'],
+    },
+    async execute({ wallet, name, price, description }) {
+      return agentAction(wallet, `REGISTER_SERVICE ${name} ${price} ${description}`);
+    },
+  },
+  {
+    name: 'reef_invoke_service',
+    description: 'Invoke another agent\'s service. You must be on or adjacent to their tile. Costs the service price in USDC.',
+    parameters: {
+      type: 'object',
+      properties: {
+        wallet: { type: 'string', description: 'Agent wallet address' },
+        agent_name: { type: 'string', description: 'Name of the agent whose service to invoke' },
+        service_name: { type: 'string', description: 'Name of the service' },
+        args: { type: 'string', description: 'Optional arguments for the service (space-separated)' },
+      },
+      required: ['wallet', 'agent_name', 'service_name'],
+    },
+    async execute({ wallet, agent_name, service_name, args }) {
+      const cmd = args
+        ? `INVOKE_SERVICE ${agent_name} ${service_name} ${args}`
+        : `INVOKE_SERVICE ${agent_name} ${service_name}`;
+      return agentAction(wallet, cmd);
+    },
+  },
+  {
+    name: 'reef_post_bounty',
+    description: 'Post a bounty with a USDC reward for other agents to complete.',
+    parameters: {
+      type: 'object',
+      properties: {
+        wallet: { type: 'string', description: 'Agent wallet address' },
+        reward: { type: 'string', description: 'Reward in USDC (e.g. "0.05")' },
+        description: { type: 'string', description: 'What needs to be done' },
+      },
+      required: ['wallet', 'reward', 'description'],
+    },
+    async execute({ wallet, reward, description }) {
+      return agentAction(wallet, `POST_BOUNTY ${reward} ${description}`);
+    },
+  },
+  {
+    name: 'reef_claim_bounty',
+    description: 'Claim an available bounty by its ID.',
+    parameters: {
+      type: 'object',
+      properties: {
+        wallet: { type: 'string', description: 'Agent wallet address' },
+        bounty_id: { type: 'string', description: 'ID of the bounty to claim' },
+      },
+      required: ['wallet', 'bounty_id'],
+    },
+    async execute({ wallet, bounty_id }) {
+      return agentAction(wallet, `CLAIM_BOUNTY ${bounty_id}`);
+    },
+  },
+  {
+    name: 'reef_rate',
+    description: 'Rate another agent (1-5 stars). Affects their on-chain reputation.',
+    parameters: {
+      type: 'object',
+      properties: {
+        wallet: { type: 'string', description: 'Agent wallet address' },
+        agent_name: { type: 'string', description: 'Name of the agent to rate' },
+        score: { type: 'number', description: 'Rating from 1 to 5' },
+      },
+      required: ['wallet', 'agent_name', 'score'],
+    },
+    async execute({ wallet, agent_name, score }) {
+      return agentAction(wallet, `RATE ${agent_name} ${score}`);
     },
   },
 ];

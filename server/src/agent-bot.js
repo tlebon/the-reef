@@ -9,24 +9,25 @@
  *   node server/src/agent-bot.js [name] [archetype]
  *
  * Environment:
- *   REEF_SERVER  — server URL (default: http://localhost:3001)
- *   BOT_NAME     — agent name (default: BotAgent)
+ *   REEF_SERVER   — server URL (default: http://localhost:3001)
+ *   BOT_NAME      — agent name (default: BotAgent)
  *   BOT_ARCHETYPE — agent archetype (default: scout)
+ *   BOT_KEY       — hex private key (generates random if not set)
  */
 
 import { io } from 'socket.io-client';
+import { ethers } from 'ethers';
 
 const SERVER = process.env.REEF_SERVER || 'http://localhost:3001';
 const BOT_NAME = process.argv[2] || process.env.BOT_NAME || 'BotAgent';
 const BOT_ARCHETYPE = process.argv[3] || process.env.BOT_ARCHETYPE || 'scout';
 
-// Generate a deterministic fake wallet from the bot name so reconnects work
-function fakeWallet(name) {
-  const hex = Buffer.from(name.padEnd(20, '\0')).toString('hex').slice(0, 40);
-  return '0x' + hex;
-}
+// Use a real wallet so the bot can reconnect and use the REST API
+const wallet = process.env.BOT_KEY
+  ? new ethers.Wallet(process.env.BOT_KEY)
+  : ethers.Wallet.createRandom();
 
-const WALLET = fakeWallet(BOT_NAME);
+const WALLET = wallet.address;
 
 console.log(`[bot] Connecting to ${SERVER} as ${BOT_NAME} (${BOT_ARCHETYPE})`);
 console.log(`[bot] Wallet: ${WALLET}`);
@@ -34,41 +35,52 @@ console.log(`[bot] Wallet: ${WALLET}`);
 const socket = io(SERVER, { transports: ['websocket'] });
 
 let agentId = null;
-let lastState = null;
+let pendingDecision = false;
 
 // ── Connection ──────────────────────────────────────────────────────
 
-socket.on('connect', () => {
+socket.on('connect', async () => {
   console.log(`[bot] Connected (socket ${socket.id})`);
-  // Register — the server will reconnect us if this wallet already has an agent
+
+  // Sign an auth message like the real client does
+  const message = `Sign in to The Reef\nWallet: ${WALLET}\nTimestamp: ${Date.now()}`;
+  const signature = await wallet.signMessage(message);
+
   socket.emit('agent:register', {
     name: BOT_NAME,
     archetype: BOT_ARCHETYPE,
-    walletAddress: null, // no wallet auth for bots
+    walletAddress: WALLET,
+    signature,
+    message,
   });
 });
 
 socket.on('agent:registered', ({ agent }) => {
   agentId = agent.id;
   console.log(`[bot] Registered as ${agent.name} (${agent.archetype}) at (${agent.x},${agent.y})`);
-  // Do an initial look
   socket.emit('agent:look', { agentId });
 });
 
 socket.on('agent:error', ({ error }) => {
   console.error(`[bot] Registration error: ${error}`);
-  // If name is taken, try with a suffix
   if (error.includes('already taken')) {
     const newName = BOT_NAME + Math.floor(Math.random() * 999);
     console.log(`[bot] Retrying with name: ${newName}`);
-    socket.emit('agent:register', { name: newName, archetype: BOT_ARCHETYPE });
+    socket.emit('agent:register', { name: newName, archetype: BOT_ARCHETYPE, walletAddress: WALLET });
   }
 });
 
 // ── State Updates ───────────────────────────────────────────────────
 
 socket.on('agent:look_result', (state) => {
-  lastState = state;
+  // If we requested a look for decision-making, act now
+  if (pendingDecision) {
+    pendingDecision = false;
+    const command = decide(state);
+    if (command) {
+      socket.emit('agent:command', { agentId, command });
+    }
+  }
 });
 
 socket.on('agent:result', ({ command, result }) => {
@@ -92,25 +104,18 @@ function decide(state) {
     const best = resources
       .filter(r => (agent.inventory[r] || 0) >= 3)
       .sort((a, b) => (agent.inventory[b] || 0) - (agent.inventory[a] || 0))[0];
-    if (best) {
-      return `REST ${best}`;
-    }
-    // No resources to rest with, just wait for regen
+    if (best) return `REST ${best}`;
     return null;
   }
 
-  // Priority 2: If we have energy and are on an unbuilt tile with no owned tiles, BUILD
+  // Priority 2: If we have no tiles and are on an unbuilt tile, BUILD
   if (agent.tilesOwned === 0) {
     const here = tiles.find(t => t.x === agent.x && t.y === agent.y);
-    if (here && !here.built) {
-      return 'BUILD #';
-    }
+    if (here && !here.built) return 'BUILD #';
   }
 
-  // Priority 3: If energy > 15, SCAVENGE to gather resources
-  if (agent.energy > 15) {
-    return 'SCAVENGE';
-  }
+  // Priority 3: If energy > 15, SCAVENGE
+  if (agent.energy > 15) return 'SCAVENGE';
 
   // Priority 4: MOVE to a random adjacent revealed tile
   const adjacent = tiles.filter(t => {
@@ -136,17 +141,9 @@ function decide(state) {
 
 socket.on('world:tick', () => {
   if (!agentId) return;
-
-  // Request fresh state
+  // Request fresh state — decision happens in look_result handler
+  pendingDecision = true;
   socket.emit('agent:look', { agentId });
-
-  // Decide and act after a short delay to let look_result arrive
-  setTimeout(() => {
-    const command = decide(lastState);
-    if (command) {
-      socket.emit('agent:command', { agentId, command });
-    }
-  }, 500);
 });
 
 // ── Graceful Shutdown ───────────────────────────────────────────────

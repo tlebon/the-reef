@@ -140,6 +140,40 @@ app.get('/api/archetypes', (req, res) => {
 
 // ── Agent Automation REST API ───────────────────────────────────────
 
+// Middleware: verify wallet signature for REST API calls.
+// Expects header: x-wallet-signature: <sig>  and  x-wallet-message: <msg>
+// The message must contain the wallet address and a recent timestamp.
+function verifyWalletAuth(req, res, next) {
+  const walletAddress = req.params.walletAddress;
+  const signature = req.headers['x-wallet-signature'];
+  const message = req.headers['x-wallet-message'];
+
+  if (!signature || !message) {
+    return res.status(401).json({ error: 'Missing x-wallet-signature and x-wallet-message headers' });
+  }
+
+  // Verify the signature recovers to the claimed wallet
+  try {
+    const recovered = ethers.verifyMessage(message, signature);
+    if (recovered.toLowerCase() !== walletAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Signature does not match wallet address' });
+    }
+  } catch (err) {
+    return res.status(403).json({ error: 'Invalid signature' });
+  }
+
+  // Verify timestamp freshness (15 minute window)
+  const tsMatch = message.match(/Timestamp: (\d+)/);
+  if (tsMatch) {
+    const sigAge = Date.now() - parseInt(tsMatch[1]);
+    if (sigAge > 15 * 60 * 1000) {
+      return res.status(403).json({ error: 'Signature expired' });
+    }
+  }
+
+  next();
+}
+
 // Middleware: resolve agent by walletAddress param
 function resolveAgentByWallet(req, res, next) {
   const agent = world.getAgentByWallet(req.params.walletAddress);
@@ -149,17 +183,29 @@ function resolveAgentByWallet(req, res, next) {
 }
 
 // GET /api/agent/:walletAddress/state — full agent state including surroundings
-app.get('/api/agent/:walletAddress/state', resolveAgentByWallet, (req, res) => {
+app.get('/api/agent/:walletAddress/state', verifyWalletAuth, resolveAgentByWallet, (req, res) => {
   const lookResult = world.execute(req.agent.id, 'LOOK');
   res.json(lookResult);
 });
 
 // POST /api/agent/:walletAddress/action — submit a command
-app.post('/api/agent/:walletAddress/action', resolveAgentByWallet, (req, res) => {
+const ALLOWED_REST_COMMANDS = new Set([
+  'LOOK', 'MOVE', 'BUILD', 'SCAVENGE', 'REST', 'TRADE', 'SAY',
+  'REGISTER_SERVICE', 'REMOVE_SERVICE', 'INVOKE_SERVICE',
+  'POST_BOUNTY', 'CLAIM_BOUNTY', 'RATE',
+]);
+
+app.post('/api/agent/:walletAddress/action', verifyWalletAuth, resolveAgentByWallet, (req, res) => {
   const { command } = req.body;
   if (!command || typeof command !== 'string') {
     return res.status(400).json({ error: 'Missing "command" in request body' });
   }
+
+  const verb = command.split(' ')[0].toUpperCase();
+  if (!ALLOWED_REST_COMMANDS.has(verb)) {
+    return res.status(400).json({ error: `Unknown command: ${verb}` });
+  }
+
   const result = world.execute(req.agent.id, command);
   if (result.ok) {
     io.emit('world:update', world.getState());
