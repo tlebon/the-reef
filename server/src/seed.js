@@ -6,11 +6,11 @@
  */
 
 const SEED_BOUNTIES = [
-  { reward: 0.01, description: 'Build your first structure on any tile' },
-  { reward: 0.005, description: 'Explore and discover a new tile' },
-  { reward: 0.02, description: 'Complete a trade with another agent' },
-  { reward: 0.015, description: 'Register a service on a tile you own' },
-  { reward: 0.03, description: 'Invoke another agents service' },
+  { id: 'seed-build',   reward: 0.01,  description: 'Build your first structure on any tile' },
+  { id: 'seed-explore', reward: 0.005, description: 'Explore and discover a new tile' },
+  { id: 'seed-trade',   reward: 0.02,  description: 'Complete a trade with another agent' },
+  { id: 'seed-service', reward: 0.015, description: 'Register a service on a tile you own' },
+  { id: 'seed-invoke',  reward: 0.03,  description: "Invoke another agent's service" },
 ];
 
 const NPC_AGENTS = [
@@ -18,7 +18,6 @@ const NPC_AGENTS = [
     id: 'npc-merchant',
     name: 'Barnacle',
     archetype: 'merchant',
-    behavior: 'trader',
     services: [
       { name: 'exchange', price: 0.005, description: 'Trade any resource 1:1 at baseline rates' },
     ],
@@ -27,21 +26,42 @@ const NPC_AGENTS = [
     id: 'npc-crafter',
     name: 'Polyp',
     archetype: 'crafter',
-    behavior: 'crafter',
     services: [
       { name: 'combine', price: 0.01, description: 'Combine 3 of any resource into 1 rare material' },
     ],
   },
 ];
 
+const NPC_SAYINGS = {
+  'npc-merchant': [
+    'Fresh resources, fair prices!',
+    'Trading all day, every tick.',
+    'Got coral? Got crystal? Let us deal.',
+  ],
+  'npc-crafter': [
+    'Bring me materials, I will make wonders.',
+    'Three becomes one. The reef provides.',
+    'Crafting is patience made solid.',
+  ],
+};
+
 /**
  * Seed the world with starter bounties and NPC agents.
+ * Skips if already seeded (idempotent).
  */
 export function seedWorld(world) {
+  // Guard against double-seeding (check both bounties and NPCs)
+  const hasSeededBounties = world.bounties.some(b => b.posterId === 'system');
+  const hasSeededNPCs = NPC_AGENTS.some(npc => world.getAgent(npc.id));
+  if (hasSeededBounties && hasSeededNPCs) {
+    console.log('  Seed: already seeded, skipping');
+    return;
+  }
+
   // Post seed bounties
   for (const bounty of SEED_BOUNTIES) {
     world.bounties.push({
-      id: `seed-${world.bounties.length}`,
+      id: bounty.id,
       poster: 'The Reef',
       posterId: 'system',
       reward: bounty.reward,
@@ -66,11 +86,19 @@ export function seedWorld(world) {
     const agent = result.agent;
 
     // Build on spawn tile so NPCs have a home
-    world.execute(npc.id, 'BUILD @');
+    const buildResult = world.execute(npc.id, 'BUILD @');
+    if (buildResult.error) {
+      console.error(`  Seed: ${npc.name} failed to build — ${buildResult.error}`);
+      world.agents.delete(npc.id); // clean up orphaned agent
+      continue;
+    }
 
     // Register services
     for (const service of npc.services) {
-      world.execute(npc.id, `REGISTER_SERVICE ${service.name} ${service.price} ${service.description}`);
+      const svcResult = world.execute(npc.id, `REGISTER_SERVICE ${service.name} ${service.price} ${service.description}`);
+      if (svcResult.error) {
+        console.error(`  Seed: ${npc.name} failed to register ${service.name} — ${svcResult.error}`);
+      }
     }
 
     // Give NPCs some starter inventory so they can trade
@@ -100,19 +128,7 @@ export function tickNPCs(world) {
 
     // NPCs occasionally say something to create atmosphere
     if (world.tick % 10 === 0) {
-      const sayings = {
-        'npc-merchant': [
-          'Fresh resources, fair prices!',
-          'Trading all day, every tick.',
-          'Got coral? Got crystal? Let us deal.',
-        ],
-        'npc-crafter': [
-          'Bring me materials, I will make wonders.',
-          'Three becomes one. The reef provides.',
-          'Crafting is patience made solid.',
-        ],
-      };
-      const lines = sayings[npc.id] || [];
+      const lines = NPC_SAYINGS[npc.id] || [];
       if (lines.length > 0) {
         const line = lines[world.tick % lines.length];
         world.execute(npc.id, `SAY ${line}`);
