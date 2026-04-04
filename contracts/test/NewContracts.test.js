@@ -71,19 +71,19 @@ describe("ReefResource", function () {
     const ids = [0, 1]; // coral, crystal
     const amounts = [10, 5];
     const nonce = 0;
+    const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
     const chainId = (await ethers.provider.getNetwork()).chainId;
     const contractAddr = await resource.getAddress();
 
-    // Server signs the claim (includes chainId + contract address)
     const hash = ethers.keccak256(
       ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "uint256[]", "uint256[]", "uint256", "uint256", "address"],
-        [user1.address, ids, amounts, nonce, chainId, contractAddr]
+        ["address", "uint256[]", "uint256[]", "uint256", "uint256", "uint256", "address"],
+        [user1.address, ids, amounts, nonce, deadline, chainId, contractAddr]
       )
     );
     const signature = await owner.signMessage(ethers.getBytes(hash));
 
-    await resource.connect(user1).claimResources(user1.address, ids, amounts, nonce, signature);
+    await resource.connect(user1).claimResources(user1.address, ids, amounts, nonce, deadline, signature);
 
     expect(await resource.balanceOf(user1.address, 0)).to.equal(10);
     expect(await resource.balanceOf(user1.address, 1)).to.equal(5);
@@ -94,29 +94,18 @@ describe("ReefResource", function () {
     const ids = [0];
     const amounts = [10];
     const wrongNonce = 99;
+    const deadline = Math.floor(Date.now() / 1000) + 3600;
+    const dummySig = "0x" + "00".repeat(65);
 
-    const hash = ethers.solidityPackedKeccak256(
-      ["address", "uint256[]", "uint256[]", "uint256"],
-      [user1.address, ids, amounts, wrongNonce]
-    );
-    const signature = await owner.signMessage(ethers.getBytes(hash));
-
-    await expect(resource.connect(user1).claimResources(user1.address, ids, amounts, wrongNonce, signature))
+    await expect(resource.connect(user1).claimResources(user1.address, ids, amounts, wrongNonce, deadline, dummySig))
       .to.be.revertedWith("ReefResource: invalid nonce");
   });
 
   it("should reject claim for someone else", async function () {
-    const ids = [0];
-    const amounts = [10];
-    const nonce = 0;
+    const deadline = Math.floor(Date.now() / 1000) + 3600;
+    const dummySig = "0x" + "00".repeat(65);
 
-    const hash = ethers.solidityPackedKeccak256(
-      ["address", "uint256[]", "uint256[]", "uint256"],
-      [user1.address, ids, amounts, nonce]
-    );
-    const signature = await owner.signMessage(ethers.getBytes(hash));
-
-    await expect(resource.connect(user2).claimResources(user1.address, ids, amounts, nonce, signature))
+    await expect(resource.connect(user2).claimResources(user1.address, [0], [10], 0, deadline, dummySig))
       .to.be.revertedWith("ReefResource: can only claim for yourself");
   });
 
@@ -124,17 +113,18 @@ describe("ReefResource", function () {
     const ids = [0];
     const amounts = [10];
     const nonce = 0;
+    const deadline = Math.floor(Date.now() / 1000) + 3600;
 
     // Sign with wrong signer (not owner)
     const hash = ethers.keccak256(
       ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "uint256[]", "uint256[]", "uint256", "uint256", "address"],
-        [user1.address, ids, amounts, nonce, (await ethers.provider.getNetwork()).chainId, await resource.getAddress()]
+        ["address", "uint256[]", "uint256[]", "uint256", "uint256", "uint256", "address"],
+        [user1.address, ids, amounts, nonce, deadline, (await ethers.provider.getNetwork()).chainId, await resource.getAddress()]
       )
     );
     const signature = await user2.signMessage(ethers.getBytes(hash));
 
-    await expect(resource.connect(user1).claimResources(user1.address, ids, amounts, nonce, signature))
+    await expect(resource.connect(user1).claimResources(user1.address, ids, amounts, nonce, deadline, signature))
       .to.be.revertedWith("ReefResource: invalid signature");
   });
 

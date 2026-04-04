@@ -99,16 +99,19 @@ contract ReefResource is ERC1155, Ownable {
      * @param ids       Token IDs to claim
      * @param amounts   Amounts per token ID
      * @param nonce     Must match claimNonce[to] (prevents replay)
-     * @param signature Server's signature over (to, ids, amounts, nonce)
+     * @param deadline  Unix timestamp — claim must be submitted before this
+     * @param signature Server's signature over (to, ids, amounts, nonce, deadline)
      */
     function claimResources(
         address to,
         uint256[] calldata ids,
         uint256[] calldata amounts,
         uint256 nonce,
+        uint256 deadline,
         bytes calldata signature
     ) external {
         require(msg.sender == to, "ReefResource: can only claim for yourself");
+        require(block.timestamp <= deadline, "ReefResource: claim expired");
         require(nonce == claimNonce[to], "ReefResource: invalid nonce");
         require(ids.length == amounts.length, "ReefResource: length mismatch");
 
@@ -118,7 +121,7 @@ contract ReefResource is ERC1155, Ownable {
         }
 
         // Verify server signature (includes chain ID and contract address to prevent replay)
-        bytes32 hash = keccak256(abi.encode(to, ids, amounts, nonce, block.chainid, address(this)));
+        bytes32 hash = keccak256(abi.encode(to, ids, amounts, nonce, deadline, block.chainid, address(this)));
         bytes32 ethHash = hash.toEthSignedMessageHash();
         require(ethHash.recover(signature) == owner(), "ReefResource: invalid signature");
 
