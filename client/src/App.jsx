@@ -164,6 +164,15 @@ export default function App() {
 
   const handleCommand = (command) => {
     if (!socket || !myAgentId) return;
+
+    // Special: delegate linking goes through its own socket event
+    if (command.startsWith('LINK_DELEGATE ')) {
+      const delegateWallet = command.split(' ')[1];
+      socket.emit('agent:link_delegate', { agentId: myAgentId, delegateWallet });
+      addActivity(`> Linking AI agent: ${delegateWallet.slice(0, 10)}...`);
+      return;
+    }
+
     addActivity(`> ${command}`);
     socket.emit('agent:command', { agentId: myAgentId, command });
   };

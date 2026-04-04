@@ -69,6 +69,11 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
         <span style={styles.name}>{agent.name}</span>
         <span style={styles.energy}>Energy: {agent.energy}{agent.energy > 20 ? ' (boosted)' : '/20'}</span>
         <span style={styles.pos}>({agent.x},{agent.y})</span>
+        {agent.delegateWallet ? (
+          <span style={{ fontSize: '0.65rem', color: '#00d4aa' }} title={agent.delegateWallet}>AI linked</span>
+        ) : (
+          <button style={{ ...styles.smallBtn, fontSize: '0.6rem' }} onClick={() => setModal({ type: 'link-delegate' })}>Link AI</button>
+        )}
       </div>
 
       <div style={styles.actions}>
