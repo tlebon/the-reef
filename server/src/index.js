@@ -218,7 +218,11 @@ io.on('connection', (socket) => {
 
         // Step 3: Deduct payment (command succeeded)
         const payResult = await payments.processPayment(agentId, target.id, service.price, serviceName);
-        result.payment = payResult;
+        if (payResult.error) {
+          result.paymentError = payResult.error;
+        } else {
+          result.payment = payResult;
+        }
 
         // Check quest completion for paid services too
         const agent = world.getAgent(agentId);

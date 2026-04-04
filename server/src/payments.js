@@ -22,12 +22,8 @@ export class PaymentManager {
       return;
     }
 
-    try {
-      console.log('  Payments: Circle nanopayments configured');
-      this.enabled = true;
-    } catch (err) {
-      console.error(`  Payments: failed to initialize — ${err.message}`);
-    }
+    console.log('  Payments: Circle nanopayments configured');
+    this.enabled = true;
   }
 
   /**
