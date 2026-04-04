@@ -173,4 +173,76 @@ export class ENSManager {
   getSubname(agentName) {
     return `${agentName.toLowerCase()}.${this.parentName || 'reef.eth'}`;
   }
+
+  /**
+   * Reverse lookup — given a wallet address, find their subname.
+   * Queries the resolver's addr records for known subnames.
+   */
+  async resolveWalletToName(walletAddress) {
+    if (!this.enabled || !this.resolver) return null;
+
+    try {
+      const name = await this.provider.lookupAddress(walletAddress);
+      if (name && name.endsWith(`.${this.parentName}`)) {
+        return name;
+      }
+    } catch {
+      // Reverse resolution not set up
+    }
+
+    return null;
+  }
+
+  /**
+   * Resolve agent data from an ENS subname — name + archetype from text records.
+   */
+  async resolveAgentData(subname) {
+    if (!this.enabled || !this.resolver) return null;
+
+    try {
+      const node = ethers.namehash(subname);
+      const archetype = await this.resolver.text(node, 'archetype');
+      const agentName = subname.replace(`.${this.parentName}`, '');
+      return { name: agentName, archetype: archetype || 'builder', ensName: subname };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Given a wallet, try to find their subname by checking addr records
+   * for known subnames. Uses on-chain resolver.
+   */
+  async resolveWalletToAgent(walletAddress) {
+    if (!this.enabled) return null;
+
+    // Try reverse lookup first
+    const name = await this.resolveWalletToName(walletAddress);
+    if (name) {
+      return await this.resolveAgentData(name);
+    }
+
+    // Fallback: check if wallet owns any known subnames via registry
+    if (this.registry && this._knownSubnames) {
+      for (const subname of this._knownSubnames) {
+        try {
+          const node = ethers.namehash(subname);
+          const owner = await this.registry.owner(node);
+          if (owner.toLowerCase() === walletAddress.toLowerCase()) {
+            return await this.resolveAgentData(subname);
+          }
+        } catch { continue; }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Track a subname so we can check ownership on recovery.
+   */
+  trackSubname(subname) {
+    if (!this._knownSubnames) this._knownSubnames = new Set();
+    this._knownSubnames.add(subname);
+  }
 }

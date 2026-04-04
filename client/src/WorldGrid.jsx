@@ -31,7 +31,9 @@ export default function WorldGrid({ tiles, agents, onSelectAgent, onSelectTile, 
   const agentsByPos = useMemo(() => {
     const map = {};
     for (const a of agents) {
-      map[`${a.x},${a.y}`] = a;
+      const key = `${a.x},${a.y}`;
+      if (!map[key]) map[key] = [];
+      map[key].push(a);
     }
     return map;
   }, [agents]);
@@ -90,14 +92,14 @@ export default function WorldGrid({ tiles, agents, onSelectAgent, onSelectTile, 
         {/* Render tiles */}
         {Object.values(tiles).map(tile => {
           const key = `${tile.x},${tile.y}`;
-          const agent = agentsByPos[key];
+          const tileAgents = agentsByPos[key] || [];
           const px = tile.x * TILE_SIZE;
           const py = tile.y * TILE_SIZE;
 
-          const isMyAgent = agent && agent.id === myAgentId;
+          const myAgentHere = tileAgents.some(a => a.id === myAgentId);
 
           return (
-            <g key={key} onClick={() => agent ? onSelectAgent(agent) : onSelectTile(tile)} style={{ cursor: 'pointer' }}>
+            <g key={key} onClick={() => onSelectTile(tile)} style={{ cursor: 'pointer' }}>
               {/* Tile background */}
               <rect
                 x={px + 1}
@@ -105,8 +107,8 @@ export default function WorldGrid({ tiles, agents, onSelectAgent, onSelectTile, 
                 width={TILE_SIZE - 2}
                 height={TILE_SIZE - 2}
                 fill={tile.built ? RESOURCE_COLORS[tile.resource] + '40' : '#0f1623'}
-                stroke={isMyAgent ? '#00d4aa' : tile.built ? RESOURCE_COLORS[tile.resource] + '80' : '#1a2035'}
-                strokeWidth={isMyAgent ? 2 : 1}
+                stroke={myAgentHere ? '#00d4aa' : tile.built ? RESOURCE_COLORS[tile.resource] + '80' : '#1a2035'}
+                strokeWidth={myAgentHere ? 2 : 1}
                 rx={2}
               />
 
@@ -135,19 +137,19 @@ export default function WorldGrid({ tiles, agents, onSelectAgent, onSelectTile, 
                 </text>
               )}
 
-              {/* Agent — small indicator in top-right corner */}
-              {agent && (
-                <g>
+              {/* Agent indicators — max 3 dots, then +N */}
+              {tileAgents.slice(0, 3).map((a, i) => (
+                <g key={a.id}>
                   <circle
-                    cx={px + TILE_SIZE - 8}
+                    cx={px + TILE_SIZE - 8 - (i * 12)}
                     cy={py + 8}
                     r={6}
-                    fill={ARCHETYPE_COLORS[agent.archetype]}
-                    stroke={isMyAgent ? '#00d4aa' : '#0a0e17'}
+                    fill={ARCHETYPE_COLORS[a.archetype]}
+                    stroke={a.id === myAgentId ? '#00d4aa' : '#0a0e17'}
                     strokeWidth={1.5}
                   />
                   <text
-                    x={px + TILE_SIZE - 8}
+                    x={px + TILE_SIZE - 8 - (i * 12)}
                     y={py + 9}
                     textAnchor="middle"
                     dominantBaseline="middle"
@@ -156,9 +158,20 @@ export default function WorldGrid({ tiles, agents, onSelectAgent, onSelectTile, 
                     fontWeight="bold"
                     fontFamily="monospace"
                   >
-                    {agent.name.charAt(0).toUpperCase()}
+                    {a.name.charAt(0).toUpperCase()}
                   </text>
                 </g>
+              ))}
+              {tileAgents.length > 3 && (
+                <text
+                  x={px + 6}
+                  y={py + 10}
+                  fill="#5f6d7e"
+                  fontSize="7"
+                  fontFamily="monospace"
+                >
+                  +{tileAgents.length - 3}
+                </text>
               )}
 
               {/* Coordinates (subtle) */}
@@ -198,27 +211,26 @@ export default function WorldGrid({ tiles, agents, onSelectAgent, onSelectTile, 
           return voidCells;
         })()}
       </svg>
-      <div style={styles.hint}>scroll to zoom · alt+drag to pan · WASD to move</div>
+      <div style={styles.hint}>scroll to zoom · alt+drag to pan · WASD to move · B to build</div>
     </div>
   );
 }
 
 const styles = {
   wrapper: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: '100%',
     position: 'relative',
+    flexShrink: 0,
   },
   hint: {
-    position: 'absolute',
-    bottom: '8px',
-    left: '50%',
+    position: 'fixed',
+    top: '52px',
+    left: 'calc(50% - 170px)',
     transform: 'translateX(-50%)',
     fontSize: '0.65rem',
     color: '#2d3748',
     pointerEvents: 'none',
+    whiteSpace: 'nowrap',
+    zIndex: 5,
   },
   svg: {
     background: '#060810',

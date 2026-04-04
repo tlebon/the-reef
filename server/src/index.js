@@ -16,6 +16,8 @@ import { ChainConnector } from './chain.js';
 import { seedWorld, tickNPCs, createAgentQuests } from './seed.js';
 import { checkQuests } from './quests.js';
 import { ENSManager } from './ens.js';
+import { PaymentManager } from './payments.js';
+import { initDB, saveWorldState, loadAgents, loadTiles, loadBounties, getWorldMeta } from './db.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -35,6 +37,7 @@ const io = new Server(httpServer, {
 const world = new World();
 const chain = new ChainConnector();
 const ens = new ENSManager();
+const payments = new PaymentManager(world);
 
 // ── REST API ─────────────────────────────────────────────────────────
 
@@ -61,9 +64,70 @@ app.get('/api/agents/:id', (req, res) => {
   res.json({ ...agent, ensName: ens.enabled ? ens.getSubname(agent.name) : null });
 });
 
+app.get('/api/agents/:id/balance', (req, res) => {
+  res.json({ balance: payments.getBalance(req.params.id) });
+});
+
 app.get('/api/bounties', (req, res) => {
   res.json(world.bounties.filter(b => !b.completed));
 });
+
+// ── x402 Paid Service Endpoints ──────────────────────────────────────
+
+// List available paid services
+app.get('/api/services', (req, res) => {
+  const services = [];
+  for (const agent of world.agents.values()) {
+    for (const s of agent.services) {
+      services.push({
+        agent: agent.name,
+        agentId: agent.id,
+        ensName: agent.ensName,
+        ...s,
+      });
+    }
+  }
+  res.json(services);
+});
+
+// Invoke a paid service via x402
+app.post('/api/services/:agentName/:serviceName',
+  // x402 middleware — returns 402 if unpaid
+  (req, res, next) => {
+    const agent = [...world.agents.values()].find(a => a.name === req.params.agentName);
+    const service = agent?.services.find(s => s.name === req.params.serviceName);
+    if (!service) return res.status(404).json({ error: 'Service not found' });
+
+    const middleware = payments.requirePayment(service.price);
+    if (middleware) {
+      return middleware(req, res, next);
+    }
+    // No Circle config — REST endpoint requires x402, return payment info
+    return res.status(402).json({
+      error: 'Payment required — configure CIRCLE_SELLER_ADDRESS for x402 nanopayments',
+      service: service.name,
+      price: service.price,
+    });
+  },
+  (req, res) => {
+    const agent = [...world.agents.values()].find(a => a.name === req.params.agentName);
+    const service = agent?.services.find(s => s.name === req.params.serviceName);
+    if (!agent || !service) return res.status(404).json({ error: 'Service not found' });
+
+    // Execute NPC service logic — sanitize query params (no spaces/special chars)
+    const args = Object.values(req.query).map(v => String(v).replace(/[^a-zA-Z0-9_-]/g, ''));
+    const result = world.execute(agent.id, `INVOKE_SERVICE ${agent.name} ${service.name} ${args.join(' ')}`);
+
+    res.json({
+      service: service.name,
+      agent: agent.name,
+      price: service.price,
+      paid: !!payments.enabled,
+      payment: req.payment || null,
+      result,
+    });
+  }
+);
 
 app.get('/api/archetypes', (req, res) => {
   res.json({
@@ -136,11 +200,33 @@ io.on('connection', (socket) => {
       }
     }
 
+    // No local agent — try to recover from ENS
+    if (!name || !archetype) {
+      if (walletAddress && ens.enabled) {
+        const ensData = await ens.resolveWalletToAgent(walletAddress);
+        if (ensData) {
+          const id = `agent-${crypto.randomUUID()}`;
+          const result = world.addAgent(id, ensData.name, ensData.archetype, {
+            ownerWallet: walletAddress,
+            ensName: ensData.ensName,
+          });
+          if (!result.error) {
+            socket.agentId = result.agent.id;
+            socket.emit('agent:registered', result);
+            console.log(`  Recovered agent from ENS: ${ensData.name} (${walletAddress.slice(0, 10)}...)`);
+            return;
+          }
+        }
+      }
+      socket.emit('agent:error', { error: 'No agent found for this wallet. Please create a new character.' });
+      return;
+    }
+
     const id = `agent-${crypto.randomUUID()}`;
     const result = world.addAgent(id, name, archetype, {
       ownerWallet: walletAddress || null,
       delegateWallet: delegateWallet || null,
-      ensName: ens.enabled ? ens.getSubname(name) : null,
+      ensName: (ens.enabled && name) ? ens.getSubname(name) : null,
     });
     if (result.error) {
       socket.emit('agent:error', result);
@@ -159,7 +245,8 @@ io.on('connection', (socket) => {
         socket.emit('quest:completed', completed);
       }
 
-      // Register on-chain sequentially (same wallet, can't send in parallel)
+      // Track and register on-chain sequentially
+      if (ens.enabled && name) ens.trackSubname(ens.getSubname(name));
       (async () => {
         try {
           await ens.registerSubname(name, walletAddress, { archetype });
@@ -186,7 +273,66 @@ io.on('connection', (socket) => {
   });
 
   // Agent command
-  socket.on('agent:command', ({ agentId, command }) => {
+  socket.on('agent:command', async ({ agentId, command }) => {
+    // Enforce agent ownership — only control your own agent
+    if (socket.agentId !== agentId) {
+      socket.emit('agent:result', { command, result: { error: 'Not authorized — you can only control your own agent' } });
+      return;
+    }
+
+    // For paid service invocations: check balance → execute → deduct
+    const parts = command.trim().split(/\s+/);
+    if (parts[0]?.toUpperCase() === 'INVOKE_SERVICE' && parts.length >= 3) {
+      const targetName = parts[1];
+      const serviceName = parts[2];
+      const target = [...world.agents.values()].find(a => a.name === targetName);
+      const service = target?.services.find(s => s.name === serviceName);
+
+      if (service && service.price > 0) {
+        // Step 1: Deduct payment first (atomic with balance check)
+        let payResult;
+        try {
+          payResult = await payments.processPayment(agentId, target.id, service.price, serviceName);
+          // Persist balance change immediately (don't wait for tick)
+          saveWorldState(world);
+          if (payResult.error) {
+            socket.emit('agent:result', { command, result: { error: payResult.error } });
+            return;
+          }
+        } catch (err) {
+          socket.emit('agent:result', { command, result: { error: `Payment failed: ${err.message}` } });
+          return;
+        }
+
+        // Step 2: Execute command (payment already taken)
+        const result = world.execute(agentId, command);
+        if (!result.ok) {
+          // Refund — command failed after payment
+          payments.credit(agentId, service.price, `Refund: ${serviceName} failed`);
+          socket.emit('agent:result', { command, result });
+          return;
+        }
+        result.payment = payResult;
+
+        // Check quest completion for paid services too
+        const agent = world.getAgent(agentId);
+        if (agent) {
+          const completed = checkQuests(world, agent);
+          if (completed.length > 0) {
+            for (const q of completed) {
+              if (q.reward > 0) payments.credit(agentId, q.reward, `Quest: ${q.description}`);
+            }
+            socket.emit('quest:completed', completed);
+          }
+        }
+
+        socket.emit('agent:result', { command, result });
+        io.emit('world:update', world.getState());
+        return;
+      }
+    }
+
+    // All other commands — no payment
     const result = world.execute(agentId, command);
     socket.emit('agent:result', { command, result });
 
@@ -196,6 +342,12 @@ io.on('connection', (socket) => {
       if (agent) {
         const completed = checkQuests(world, agent);
         if (completed.length > 0) {
+          // Credit quest rewards via payment ledger
+          for (const q of completed) {
+            if (q.reward > 0) {
+              payments.credit(agentId, q.reward, `Quest: ${q.description}`);
+            }
+          }
           socket.emit('quest:completed', completed);
         }
       }
@@ -227,8 +379,8 @@ function processTick(blockNumber) {
   // Commit state hash on-chain (fire and forget)
   chain.commitTick(world.tick, hash).catch(() => {});
 
-  // Persist world state
-  world.save(SAVE_PATH);
+  // Persist world state to SQLite
+  saveWorldState(world);
 
   const src = blockNumber ? `block #${blockNumber}` : 'interval';
   console.log(`Tick ${world.tick} (${src}) | ${world.agents.size} agents | ${world.tiles.size} tiles | hash: ${hash.slice(0, 16)}...`);
@@ -239,11 +391,40 @@ function processTick(blockNumber) {
 async function start() {
   await chain.init();
   await ens.init();
+  await payments.init();
+  initDB();
 
-  // Load saved state or seed fresh
-  const loaded = world.load(SAVE_PATH);
-  if (!loaded) {
+  // Load from SQLite or seed fresh
+  const savedTick = getWorldMeta('tick');
+  if (savedTick !== null) {
+    world.tick = savedTick;
+    for (const agent of loadAgents()) {
+      world.agents.set(agent.id, agent);
+      if (agent.ensName) ens.trackSubname?.(agent.ensName);
+    }
+    for (const tile of loadTiles()) {
+      world.tiles.set(`${tile.x},${tile.y}`, tile);
+    }
+    world.bounties = loadBounties();
+    console.log(`  DB: loaded ${world.agents.size} agents, ${world.tiles.size} tiles, tick ${world.tick}`);
+  }
+  if (world.agents.size === 0) {
     seedWorld(world);
+  }
+
+  // Recover agents from on-chain data if they're missing from local state
+  const onChainAgents = await chain.getRegisteredAgents();
+  for (const walletAddr of onChainAgents) {
+    if (!world.getAgentByWallet(walletAddr)) {
+      // Agent exists on-chain but not in local state — resolve from ENS
+      const ensData = ens.enabled ? await ens.resolveWalletToAgent(walletAddr) : null;
+      if (ensData) {
+        const id = `agent-recovered-${walletAddr.slice(2, 10)}`;
+        world.addAgent(id, ensData.name, ensData.archetype, { ownerWallet: walletAddr, ensName: ensData.ensName });
+        if (ensData.ensName) ens.trackSubname?.(ensData.ensName);
+        console.log(`  Recovered agent: ${ensData.name} (${ensData.archetype}) from ENS`);
+      }
+    }
   }
 
   // Sync ticks to blocks via WebSocket — 2 ticks per block (6s each, 12s blocks)

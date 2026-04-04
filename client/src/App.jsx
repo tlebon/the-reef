@@ -23,7 +23,10 @@ export default function App() {
   const [selectedTile, setSelectedTile] = useState(null);
   const [myAgentId, setMyAgentId] = useState(() => localStorage.getItem('reef-agent-id'));
   const [showJoin, setShowJoin] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('reef-agent-id'));
+  const [showWelcome, setShowWelcome] = useState(() => {
+    // Skip welcome if we have a wallet or agent saved
+    return !localStorage.getItem('reef-agent-id') && !localStorage.getItem('reef-wallet');
+  });
   const [latestBlock, setLatestBlock] = useState(null);
   const [joining, setJoining] = useState(false);
   const [completedQuest, setCompletedQuest] = useState(null);
@@ -174,7 +177,24 @@ export default function App() {
       wallet={wallet}
       onConnectMetaMask={async () => {
         const w = await connectMetaMask();
-        if (w) addActivity(`Wallet connected: ${w.address.slice(0, 10)}...`);
+        if (w && worldState) {
+          addActivity(`Wallet connected: ${w.address.slice(0, 10)}...`);
+          // Check if this wallet already has an agent
+          const found = Object.values(worldState.agents || {}).find(a =>
+            a.ownerWallet?.toLowerCase() === w.address.toLowerCase() ||
+            a.delegateWallet?.toLowerCase() === w.address.toLowerCase()
+          );
+          if (found) {
+            setMyAgentId(found.id);
+            localStorage.setItem('reef-agent-id', found.id);
+            setShowWelcome(false);
+            setShowJoin(false);
+            addActivity(`Welcome back, ${found.name}!`);
+          } else {
+            setShowWelcome(false);
+            setShowJoin(true);
+          }
+        }
       }}
       onCreateWallet={async () => {
         try {
@@ -182,6 +202,9 @@ export default function App() {
           addActivity(`New wallet created: ${w.address.slice(0, 10)}...`);
           if (w.privateKey) {
             setNewWalletKey(w);
+          } else {
+            setShowWelcome(false);
+            setShowJoin(true);
           }
         } catch (err) {
           addActivity(`Error creating wallet: ${err.message}`);
@@ -268,6 +291,7 @@ export default function App() {
               myAgentId={myAgentId}
               onCommand={handleCommand}
               onClose={() => setSelectedTile(null)}
+              onSelectAgent={(a) => { setSelectedAgent(a); setSelectedTile(null); }}
             />
           )}
 
@@ -367,7 +391,10 @@ const styles = {
   gridContainer: {
     flex: 1,
     overflow: 'auto',
-    padding: '20px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    paddingTop: '40px',
   },
   sidebar: {
     width: '340px',

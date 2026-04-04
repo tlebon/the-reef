@@ -53,8 +53,7 @@ export function checkQuests(world, agent) {
         bounty.claimedById = agent.id;
       }
 
-      // Reward — add to agent's balance (USDC tracked server-side for now)
-      agent.balance = (agent.balance || 0) + bounty.reward;
+      // Reward credited by PaymentManager in index.js
       agent.reputation.transactions++;
 
       completed.push(bounty);

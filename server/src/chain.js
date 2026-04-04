@@ -96,6 +96,25 @@ export class ChainConnector {
   }
 
   /**
+   * Query all registered agents from on-chain events.
+   * Returns array of wallet addresses that have been registered.
+   */
+  async getRegisteredAgents() {
+    if (!this.enabled) return [];
+
+    try {
+      // Query recent blocks only (public RPCs limit range to ~50000)
+      const currentBlock = await this.provider.getBlockNumber();
+      const fromBlock = Math.max(0, currentBlock - 40000);
+      const events = await this.reefReputation.queryFilter('AgentRegistered', fromBlock);
+      return events.map(e => e.args[0]); // agent address
+    } catch (err) {
+      console.error(`  Chain: failed to query agents — ${err.message}`);
+      return [];
+    }
+  }
+
+  /**
    * Commit a world state hash on-chain for the given tick.
    */
   async commitTick(tickNumber, stateHash) {
