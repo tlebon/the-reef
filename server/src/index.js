@@ -79,7 +79,22 @@ io.on('connection', (socket) => {
   socket.emit('world:state', world.getState());
 
   // Agent registration
-  socket.on('agent:register', async ({ name, archetype, walletAddress, delegateWallet }) => {
+  socket.on('agent:register', async ({ name, archetype, walletAddress, signature, message, delegateWallet }) => {
+    // Verify wallet ownership via signature
+    if (walletAddress && signature && message) {
+      try {
+        const { ethers } = await import('ethers');
+        const recovered = ethers.verifyMessage(message, signature);
+        if (recovered.toLowerCase() !== walletAddress.toLowerCase()) {
+          socket.emit('agent:error', { error: 'Wallet signature verification failed' });
+          return;
+        }
+      } catch {
+        socket.emit('agent:error', { error: 'Invalid signature' });
+        return;
+      }
+    }
+
     // Validate wallet addresses if provided
     if (walletAddress && !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
       socket.emit('agent:error', { error: 'Invalid wallet address' });

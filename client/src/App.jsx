@@ -103,6 +103,8 @@ export default function App() {
       name,
       archetype,
       walletAddress: wallet?.address || null,
+      signature: wallet?.signature || null,
+      message: wallet?.message || null,
     });
   };
 
