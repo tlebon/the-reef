@@ -95,13 +95,13 @@ contract ReefAgent is ERC721, Ownable, ReentrancyGuard {
     }
 
     function _update(address to, uint256 tokenId, address auth) internal override nonReentrant returns (address) {
-        // On transfer (not mint): reject if recipient already has an agent
-        if (agents[tokenId].mintedAt > 0 && to != address(0) && agentOfOwner[to] != 0) {
+        // On transfer (not mint, not self-transfer): reject if recipient already has an agent
+        address from = _ownerOf(tokenId);
+        if (agents[tokenId].mintedAt > 0 && to != address(0) && from != to && agentOfOwner[to] != 0) {
             revert("ReefAgent: recipient already has an agent");
         }
 
         // Clear sender's mapping and delegate before external call
-        address from = _ownerOf(tokenId);
         if (from != address(0)) {
             agentOfOwner[from] = 0;
             agents[tokenId].delegateWallet = address(0); // reset delegate on transfer
