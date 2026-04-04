@@ -130,19 +130,23 @@ export default function ActionBar({ agent, currentTile, messages, onCommand }) {
             )
           ) : null}
 
-          {/* Rest — available on any tile if you have resources */}
-          {agent.inventory && Object.entries(agent.inventory).some(([,v]) => v >= 3) && (
-            <select
-              style={styles.restSelect}
-              value=""
-              onChange={e => { if (e.target.value) onCommand(`REST ${e.target.value}`); e.target.value = ''; }}
-            >
-              <option value="">Rest (3 resource → +8e)</option>
-              {Object.entries(agent.inventory).filter(([,v]) => v >= 3).map(([res]) => (
-                <option key={res} value={res}>{res} ({agent.inventory[res]})</option>
-              ))}
-            </select>
-          )}
+          {/* Rest — always visible */}
+          {(() => {
+            const hasEnough = agent.inventory && Object.entries(agent.inventory).some(([,v]) => v >= 3);
+            return (
+              <select
+                style={{ ...styles.restSelect, opacity: hasEnough ? 1 : 0.4 }}
+                value=""
+                disabled={!hasEnough}
+                onChange={e => { if (e.target.value) onCommand(`REST ${e.target.value}`); e.target.value = ''; }}
+              >
+                <option value="">{hasEnough ? 'Rest (3 resource → +8e)' : 'Rest (need 3 of any resource)'}</option>
+                {agent.inventory && Object.entries(agent.inventory).filter(([,v]) => v >= 3).map(([res]) => (
+                  <option key={res} value={res}>{res} ({agent.inventory[res]})</option>
+                ))}
+              </select>
+            );
+          })()}
         </div>
       </div>
 
