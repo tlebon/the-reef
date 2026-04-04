@@ -81,12 +81,29 @@ io.on('connection', (socket) => {
 
   // Agent registration
   socket.on('agent:register', async ({ name, archetype, walletAddress, signature, message, delegateWallet }) => {
-    // Verify wallet ownership via signature — required for MetaMask wallets
+    // Validate wallet address format first
+    if (walletAddress && !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      socket.emit('agent:error', { error: 'Invalid wallet address' });
+      return;
+    }
+
+    // Verify wallet ownership via signature — required when wallet is provided
     if (walletAddress) {
       if (!signature || !message) {
         socket.emit('agent:error', { error: 'Wallet signature required — please reconnect your wallet' });
         return;
       }
+
+      // Validate timestamp — reject signatures older than 5 minutes
+      const tsMatch = message.match(/Timestamp: (\d+)/);
+      if (tsMatch) {
+        const sigAge = Date.now() - parseInt(tsMatch[1]);
+        if (sigAge > 5 * 60 * 1000) {
+          socket.emit('agent:error', { error: 'Signature expired — please sign again' });
+          return;
+        }
+      }
+
       try {
         const recovered = ethers.verifyMessage(message, signature);
         if (recovered.toLowerCase() !== walletAddress.toLowerCase()) {
@@ -97,12 +114,6 @@ io.on('connection', (socket) => {
         socket.emit('agent:error', { error: 'Invalid signature' });
         return;
       }
-    }
-
-    // Validate wallet addresses if provided
-    if (walletAddress && !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
-      socket.emit('agent:error', { error: 'Invalid wallet address' });
-      return;
     }
     if (delegateWallet && !/^0x[a-fA-F0-9]{40}$/.test(delegateWallet)) {
       socket.emit('agent:error', { error: 'Invalid delegate wallet address' });

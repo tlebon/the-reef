@@ -133,10 +133,14 @@ export default function App() {
         if (w) addActivity(`Wallet connected: ${w.address.slice(0, 10)}...`);
       }}
       onCreateWallet={async () => {
-        const w = await createWallet();
-        addActivity(`New wallet created: ${w.address.slice(0, 10)}...`);
-        if (w.privateKey) {
-          setNewWalletKey(w);
+        try {
+          const w = await createWallet();
+          addActivity(`New wallet created: ${w.address.slice(0, 10)}...`);
+          if (w.privateKey) {
+            setNewWalletKey(w);
+          }
+        } catch (err) {
+          addActivity(`Error creating wallet: ${err.message}`);
         }
       }}
       connecting={connecting}
