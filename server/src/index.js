@@ -266,13 +266,29 @@ async function executeWithSideEffects(agentId, command) {
       }
       result.payment = payResult;
 
+      // Record on-chain reputation for paid service
       const agent = world.getAgent(agentId);
+      if (agent?.ownerWallet) chain.recordTransaction(agent.ownerWallet).catch(() => {});
+
       const completed = agent ? checkQuests(world, agent) : [];
       for (const q of completed) {
         if (q.reward > 0) payments.credit(agentId, q.reward, `Quest: ${q.description}`);
       }
       return { result, completed };
     }
+
+    // NPC service (no payment but still record transaction + execute)
+    const npcResult = world.execute(agentId, command);
+    if (npcResult.ok) {
+      const agent = world.getAgent(agentId);
+      if (agent?.ownerWallet) chain.recordTransaction(agent.ownerWallet).catch(() => {});
+      const completed = agent ? checkQuests(world, agent) : [];
+      for (const q of completed) {
+        if (q.reward > 0) payments.credit(agentId, q.reward, `Quest: ${q.description}`);
+      }
+      return { result: npcResult, completed };
+    }
+    return { result: npcResult };
   }
 
   // All other commands
