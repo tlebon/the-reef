@@ -79,7 +79,7 @@ export class World {
 
   // ── Agents ─────────────────────────────────────────────────────────
 
-  addAgent(id, name, archetype, { ownerWallet, delegateWallet } = {}) {
+  addAgent(id, name, archetype, { ownerWallet, delegateWallet, ensName } = {}) {
     if (!ARCHETYPES[archetype]) {
       return { error: `Unknown archetype: ${archetype}. Choose: ${Object.keys(ARCHETYPES).join(', ')}` };
     }
@@ -108,6 +108,7 @@ export class World {
       services: [],
       ownerWallet: ownerWallet || null,
       delegateWallet: delegateWallet || null,
+      ensName: ensName || null,
     };
 
     this.agents.set(id, agent);

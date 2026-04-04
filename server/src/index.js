@@ -5,6 +5,7 @@
  * processes agent actions, and broadcasts state updates.
  */
 
+import 'dotenv/config';
 import crypto from 'crypto';
 import { ethers } from 'ethers';
 import express from 'express';
@@ -14,6 +15,7 @@ import { World } from './world.js';
 import { ChainConnector } from './chain.js';
 import { seedWorld, tickNPCs, createAgentQuests } from './seed.js';
 import { checkQuests } from './quests.js';
+import { ENSManager } from './ens.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -32,6 +34,7 @@ const io = new Server(httpServer, {
 
 const world = new World();
 const chain = new ChainConnector();
+const ens = new ENSManager();
 
 // ── REST API ─────────────────────────────────────────────────────────
 
@@ -55,7 +58,7 @@ app.get('/api/agents', (req, res) => {
 app.get('/api/agents/:id', (req, res) => {
   const agent = world.getAgent(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
-  res.json(agent);
+  res.json({ ...agent, ensName: ens.enabled ? ens.getSubname(agent.name) : null });
 });
 
 app.get('/api/bounties', (req, res) => {
@@ -101,7 +104,7 @@ io.on('connection', (socket) => {
         return;
       }
       const sigAge = Date.now() - parseInt(tsMatch[1]);
-      if (sigAge > 5 * 60 * 1000) {
+      if (sigAge > 15 * 60 * 1000) { // 15 minutes
         socket.emit('agent:error', { error: 'Signature expired — please sign again' });
         return;
       }
@@ -137,11 +140,13 @@ io.on('connection', (socket) => {
     const result = world.addAgent(id, name, archetype, {
       ownerWallet: walletAddress || null,
       delegateWallet: delegateWallet || null,
+      ensName: ens.enabled ? ens.getSubname(name) : null,
     });
     if (result.error) {
       socket.emit('agent:error', result);
     } else {
       socket.agentId = result.agent.id;
+
       socket.emit('agent:registered', result);
       io.emit('world:agent_joined', { agent: result.agent, tile: result.tile });
 
@@ -154,10 +159,15 @@ io.on('connection', (socket) => {
         socket.emit('quest:completed', completed);
       }
 
-      // Register on-chain if wallet address provided
-      if (walletAddress) {
-        await chain.registerAgent(walletAddress);
-      }
+      // Register on-chain sequentially (same wallet, can't send in parallel)
+      (async () => {
+        try {
+          await ens.registerSubname(name, walletAddress, { archetype });
+          if (walletAddress) await chain.registerAgent(walletAddress);
+        } catch (err) {
+          console.error(`  On-chain registration error: ${err.message}`);
+        }
+      })();
     }
   });
 
@@ -228,6 +238,7 @@ function processTick(blockNumber) {
 
 async function start() {
   await chain.init();
+  await ens.init();
 
   // Load saved state or seed fresh
   const loaded = world.load(SAVE_PATH);
@@ -235,14 +246,24 @@ async function start() {
     seedWorld(world);
   }
 
-  // Sync ticks to blocks if chain is connected, otherwise use interval
+  // Sync ticks to blocks via WebSocket — 2 ticks per block (6s each, 12s blocks)
+  let lastBlockTick = Date.now();
   const blockSync = chain.onNewBlock((blockNumber) => {
+    lastBlockTick = Date.now();
     processTick(blockNumber);
+    // Second tick halfway through the block
+    setTimeout(() => {
+      lastBlockTick = Date.now();
+      processTick(blockNumber);
+    }, TICK_INTERVAL);
   });
 
-  if (!blockSync) {
-    setInterval(() => processTick(null), TICK_INTERVAL);
-  }
+  // Interval fallback — only fires if no block received recently
+  setInterval(() => {
+    if (!blockSync || Date.now() - lastBlockTick > TICK_INTERVAL * 3) {
+      processTick(null);
+    }
+  }, TICK_INTERVAL);
 
   httpServer.listen(PORT, () => {
     console.log(`
@@ -253,6 +274,7 @@ async function start() {
   │  WebSocket:   ws://localhost:${PORT}   │
   │  Ticks: ${blockSync ? 'synced to blocks' : `${TICK_INTERVAL / 1000}s interval`}          │
   │  Chain: ${chain.enabled ? 'connected' : 'local-only'}             │
+  │  ENS: ${ens.enabled ? ens.parentName : 'disabled'}                │
   └─────────────────────────────────────┘
     `);
   });

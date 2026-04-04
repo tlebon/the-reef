@@ -39,19 +39,28 @@ export class ChainConnector {
    * Falls back to polling if WebSocket subscription isn't available.
    */
   onNewBlock(callback) {
-    if (!this.enabled || !this.provider) {
+    if (!this.enabled) {
       console.log('  Chain: block sync disabled (no provider). Using interval ticks.');
       return false;
     }
 
-    // Remove any existing listener before adding new one
-    this.provider.removeAllListeners('block');
-    this.provider.on('block', (blockNumber) => {
-      callback(blockNumber);
-    });
+    const wsUrl = process.env.SEPOLIA_WS_URL;
+    if (!wsUrl) {
+      console.log('  Chain: no SEPOLIA_WS_URL configured. Using interval ticks.');
+      return false;
+    }
 
-    console.log('  Chain: subscribed to new blocks');
-    return true;
+    try {
+      this.wsProvider = new ethers.WebSocketProvider(wsUrl);
+      this.wsProvider.on('block', (blockNumber) => {
+        callback(blockNumber);
+      });
+      console.log('  Chain: subscribed to blocks via WebSocket');
+      return true;
+    } catch (err) {
+      console.error(`  Chain: WebSocket subscription failed — ${err.message}`);
+      return false;
+    }
   }
 
   async init() {
