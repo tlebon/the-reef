@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title ReefAgent
@@ -12,7 +11,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  *         Stores avatar URI, archetype, and references to ENS + reputation.
  *         Tradeable — but reputation is soulbound (stays with the address).
  */
-contract ReefAgent is ERC721, Ownable, ReentrancyGuard {
+contract ReefAgent is ERC721, Ownable {
     using Strings for uint256;
 
     struct AgentData {
@@ -95,7 +94,7 @@ contract ReefAgent is ERC721, Ownable, ReentrancyGuard {
         return (a.name, a.archetype, a.avatarURI, a.ensName, a.delegateWallet, a.mintedAt);
     }
 
-    function _update(address to, uint256 tokenId, address auth) internal override nonReentrant returns (address) {
+    function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
         // On transfer (not mint, not self-transfer): reject if recipient already has an agent
         address from = _ownerOf(tokenId);
         if (agents[tokenId].mintedAt > 0 && to != address(0) && from != to && agentOfOwner[to] != 0) {
