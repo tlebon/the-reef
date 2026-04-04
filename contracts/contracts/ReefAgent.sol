@@ -20,6 +20,7 @@ contract ReefAgent is ERC721, Ownable, ReentrancyGuard {
         string archetype;
         string avatarURI;
         string ensName;
+        address delegateWallet;
         uint256 mintedAt;
     }
 
@@ -27,6 +28,8 @@ contract ReefAgent is ERC721, Ownable, ReentrancyGuard {
     uint256 public nextTokenId;
     mapping(uint256 => AgentData) public agents;
     mapping(address => uint256) public agentOfOwner;
+
+    event DelegateUpdated(uint256 indexed tokenId, address delegate);
 
     event AgentMinted(address indexed owner, uint256 indexed tokenId, string name, string archetype);
     event AvatarUpdated(uint256 indexed tokenId, string avatarURI);
@@ -42,11 +45,21 @@ contract ReefAgent is ERC721, Ownable, ReentrancyGuard {
         require(agentOfOwner[to] == 0, "ReefAgent: wallet already has an agent");
 
         uint256 tokenId = ++nextTokenId;
-        agents[tokenId] = AgentData(agentName, archetype, "", ensName, block.timestamp);
+        agents[tokenId] = AgentData(agentName, archetype, "", ensName, address(0), block.timestamp);
 
         _mint(to, tokenId);
         emit AgentMinted(to, tokenId, agentName, archetype);
         return tokenId;
+    }
+
+    /**
+     * @notice Set delegate wallet — allows an AI agent to act on behalf of the owner.
+     *         Only callable by the token owner.
+     */
+    function setDelegate(uint256 tokenId, address delegate) external {
+        require(ownerOf(tokenId) == msg.sender, "ReefAgent: not token owner");
+        agents[tokenId].delegateWallet = delegate;
+        emit DelegateUpdated(tokenId, delegate);
     }
 
     function setAvatar(uint256 tokenId, string calldata avatarURI) external onlyOwner {
@@ -87,10 +100,11 @@ contract ReefAgent is ERC721, Ownable, ReentrancyGuard {
             revert("ReefAgent: recipient already has an agent");
         }
 
-        // Clear sender's mapping before external call
+        // Clear sender's mapping and delegate before external call
         address from = _ownerOf(tokenId);
         if (from != address(0)) {
             agentOfOwner[from] = 0;
+            agents[tokenId].delegateWallet = address(0); // reset delegate on transfer
         }
 
         address result = super._update(to, tokenId, auth);

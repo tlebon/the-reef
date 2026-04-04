@@ -78,7 +78,7 @@ describe("ReefTile", function () {
   });
 
   it("should mint a tile at a position", async function () {
-    await tile.mintTile(user1.address, 3, -5, 0);
+    await tile.mintTile(user1.address, 3, -5, 0, "#");
     expect(await tile.ownerOf(1)).to.equal(user1.address);
 
     const data = await tile.getTile(1);
@@ -88,30 +88,30 @@ describe("ReefTile", function () {
   });
 
   it("should lookup tile by position", async function () {
-    await tile.mintTile(user1.address, 3, -5, 0);
+    await tile.mintTile(user1.address, 3, -5, 0, "#");
     expect(await tile.tileAtPosition(3, -5)).to.equal(1);
     expect(await tile.tileAtPosition(0, 0)).to.equal(0); // unminted
   });
 
   it("should reject duplicate position", async function () {
-    await tile.mintTile(user1.address, 3, -5, 0);
-    await expect(tile.mintTile(user2.address, 3, -5, 1))
+    await tile.mintTile(user1.address, 3, -5, 0, "#");
+    await expect(tile.mintTile(user2.address, 3, -5, 1, "#"))
       .to.be.revertedWith("ReefTile: tile already minted");
   });
 
   it("should reject invalid resource type", async function () {
-    await expect(tile.mintTile(user1.address, 0, 0, 5))
+    await expect(tile.mintTile(user1.address, 0, 0, 5, "#"))
       .to.be.revertedWith("ReefTile: invalid resource type");
   });
 
   it("should allow tile transfer", async function () {
-    await tile.mintTile(user1.address, 0, 0, 0);
+    await tile.mintTile(user1.address, 0, 0, 0, "#");
     await tile.connect(user1).transferFrom(user1.address, user2.address, 1);
     expect(await tile.ownerOf(1)).to.equal(user2.address);
   });
 
   it("should reject non-owner mint", async function () {
-    await expect(tile.connect(user1).mintTile(user1.address, 0, 0, 0))
+    await expect(tile.connect(user1).mintTile(user1.address, 0, 0, 0, "#"))
       .to.be.revertedWithCustomError(tile, "OwnableUnauthorizedAccount");
   });
 });

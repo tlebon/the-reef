@@ -17,6 +17,7 @@ contract ReefTile is ERC721, Ownable {
         int256 x;
         int256 y;
         uint8 resourceType; // 0=coral, 1=crystal, 2=kelp, 3=shell
+        string symbol;      // map icon chosen by the builder
         uint256 mintedAt;
     }
 
@@ -33,14 +34,15 @@ contract ReefTile is ERC721, Ownable {
         address to,
         int256 x,
         int256 y,
-        uint8 resourceType
+        uint8 resourceType,
+        string calldata symbol
     ) external onlyOwner returns (uint256) {
         bytes32 posKey = keccak256(abi.encodePacked(x, y));
         require(positionToToken[posKey] == 0 || !_exists(positionToToken[posKey]), "ReefTile: tile already minted");
         require(resourceType <= 3, "ReefTile: invalid resource type");
 
         uint256 tokenId = ++nextTokenId;
-        tiles[tokenId] = TileData(x, y, resourceType, block.timestamp);
+        tiles[tokenId] = TileData(x, y, resourceType, symbol, block.timestamp);
         positionToToken[posKey] = tokenId;
 
         _mint(to, tokenId);
@@ -68,8 +70,8 @@ contract ReefTile is ERC721, Ownable {
         return tiles[tokenId].mintedAt > 0;
     }
 
-    function getTile(uint256 tokenId) external view returns (int256 x, int256 y, uint8 resourceType, uint256 mintedAt) {
+    function getTile(uint256 tokenId) external view returns (int256 x, int256 y, uint8 resourceType, string memory symbol, uint256 mintedAt) {
         TileData memory t = tiles[tokenId];
-        return (t.x, t.y, t.resourceType, t.mintedAt);
+        return (t.x, t.y, t.resourceType, t.symbol, t.mintedAt);
     }
 }
