@@ -325,6 +325,69 @@ describe('World', () => {
     });
   });
 
+  describe('INVOKE_SERVICE', () => {
+    beforeEach(() => {
+      world.addAgent('a1', 'Alice', 'builder');
+      world.addAgent('a2', 'Bob', 'merchant');
+      world.execute('a2', 'BUILD #');
+      world.execute('a2', 'REGISTER_SERVICE shop 0.01 A shop');
+    });
+
+    it('invokes a nearby agents service', () => {
+      const result = world.execute('a1', 'INVOKE_SERVICE Bob shop');
+      assert.ok(result.ok);
+    });
+
+    it('rejects if agent not found', () => {
+      const result = world.execute('a1', 'INVOKE_SERVICE Nobody shop');
+      assert.ok(result.error);
+    });
+
+    it('rejects if service not found', () => {
+      const result = world.execute('a1', 'INVOKE_SERVICE Bob fake');
+      assert.ok(result.error);
+    });
+  });
+
+  describe('POST_BOUNTY', () => {
+    beforeEach(() => {
+      world.addAgent('a1', 'Alice', 'builder');
+    });
+
+    it('posts a bounty', () => {
+      const result = world.execute('a1', 'POST_BOUNTY 0.05 Find treasure');
+      assert.ok(result.ok);
+      assert.ok(result.bounty);
+      assert.equal(world.bounties.length, 1);
+    });
+
+    it('costs energy', () => {
+      const before = world.getAgent('a1').energy;
+      world.execute('a1', 'POST_BOUNTY 0.01 Do thing');
+      assert.equal(world.getAgent('a1').energy, before - 1);
+    });
+  });
+
+  describe('REMOVE_SERVICE', () => {
+    beforeEach(() => {
+      world.addAgent('a1', 'Alice', 'builder');
+      world.execute('a1', 'BUILD #');
+      world.execute('a1', 'REGISTER_SERVICE shop 0.01 My shop');
+    });
+
+    it('removes a registered service', () => {
+      assert.equal(world.getAgent('a1').services.length, 1);
+      const result = world.execute('a1', 'REMOVE_SERVICE shop');
+      assert.ok(result.ok);
+      assert.equal(world.getAgent('a1').services.length, 0);
+    });
+
+    it('rejects removing nonexistent service', () => {
+      const result = world.execute('a1', 'REMOVE_SERVICE fake');
+      assert.ok(result.error);
+    });
+  });
+
   describe('CLAIM_BOUNTY', () => {
     it('sets forAgentId on claimed bounty', () => {
       world.addAgent('a1', 'Alice', 'builder');

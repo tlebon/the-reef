@@ -266,6 +266,9 @@ export function cmdInvokeService(world, agent, args) {
   const target = [...world.agents.values()].find(a => a.name === targetName);
   if (!target) return { error: `Agent '${targetName}' not found` };
 
+  const dist = Math.abs(target.x - agent.x) + Math.abs(target.y - agent.y);
+  if (dist > 2) return { error: `${targetName} is too far away (distance: ${dist})` };
+
   const service = target.services.find(s => s.name === serviceName);
   if (!service) return { error: `${targetName} has no service called '${serviceName}'` };
 
