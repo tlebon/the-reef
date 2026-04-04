@@ -3,43 +3,13 @@
  *
  * Dynamic grid that grows through agent building.
  * Tiles only exist where agents have built or where building has revealed them.
+ * Commands are in commands.js, constants in constants.js, loot in loot.js.
  */
 
 import crypto from 'crypto';
 import fs from 'fs';
-
-const RESOURCES = ['coral', 'crystal', 'kelp', 'shell'];
-
-const RARITY_TABLE = [
-  { rarity: 'common',    chance: 0.50, color: '#8892a4' },
-  { rarity: 'uncommon',  chance: 0.08, color: '#00b894' },
-  { rarity: 'rare',      chance: 0.005, color: '#a29bfe' },
-  { rarity: 'legendary', chance: 0.001, color: '#fdcb6e' },
-];
-
-const LOOT_NAMES = {
-  coral:   ['Coral Shard', 'Reef Fragment', 'Polyp Bloom', 'Abyssal Coral'],
-  crystal: ['Crystal Splinter', 'Prism Dust', 'Geode Heart', 'Void Crystal'],
-  kelp:    ['Kelp Strand', 'Sea Vine', 'Drift Seed', 'Leviathan Kelp'],
-  shell:   ['Shell Chip', 'Nautilus Ring', 'Conch Echo', 'Ancient Shell'],
-};
-
-const RANDOM_QUEST_TEMPLATES = [
-  { desc: 'Trade with {amount} different agents', type: 'trade' },
-  { desc: 'Collect {amount} {resource}', type: 'collect' },
-  { desc: 'Scavenge {amount} times', type: 'scavenge' },
-];
-
-const ARCHETYPES = {
-  builder:  { affinity: 'coral',   buildCost: 2, moveCost: 1, description: 'Efficient construction, structural bonuses' },
-  merchant: { affinity: 'shell',   buildCost: 3, moveCost: 1, description: 'Better trade rates, price negotiation' },
-  scout:    { affinity: 'kelp',    buildCost: 3, moveCost: 0, description: 'Faster movement, exploration, bounty specialist' },
-  crafter:  { affinity: 'crystal', buildCost: 3, moveCost: 1, description: 'Combines resources into advanced materials' },
-};
-
-const MAX_ENERGY = 20;
-const ENERGY_REGEN = 5;
-const BASE_BUILD_CAP = 5;
+import { RESOURCES, ARCHETYPES, MAX_ENERGY, ENERGY_REGEN, RANDOM_QUEST_TEMPLATES } from './constants.js';
+import * as cmd from './commands.js';
 
 function randomResource() {
   return RESOURCES[Math.floor(Math.random() * RESOURCES.length)];
@@ -52,7 +22,6 @@ export class World {
     this.agents = new Map();      // agentId -> Agent
     this.messages = [];           // recent broadcasts
     this.bounties = [];           // active bounties
-    this.actionQueue = [];        // queued actions for current tick
     this.log = [];                // event log
 
     // Create the origin tile
@@ -124,21 +93,17 @@ export class World {
       return { error: `Name '${name}' is already taken` };
     }
 
-    // Spawn at random frontier tile, or origin if no frontier
     const frontier = this._getFrontierTiles();
     const spawnTile = frontier.length > 0
       ? frontier[Math.floor(Math.random() * frontier.length)]
       : this.tiles.get(this._tileKey(0, 0));
 
     const agent = {
-      id,
-      name,
-      archetype,
-      x: spawnTile.x,
-      y: spawnTile.y,
+      id, name, archetype,
+      x: spawnTile.x, y: spawnTile.y,
       energy: MAX_ENERGY,
       reputation: { transactions: 0, totalRating: 0, count: 0 },
-      inventory: {},    // resource -> count
+      inventory: {},
       tilesOwned: 0,
       services: [],
     };
@@ -150,11 +115,6 @@ export class World {
 
   getAgent(id) {
     return this.agents.get(id) || null;
-  }
-
-  _buildCap(agent) {
-    const repLevel = Math.floor(agent.reputation.transactions / 10);
-    return BASE_BUILD_CAP + repLevel;
   }
 
   _avgRating(agent) {
@@ -169,498 +129,28 @@ export class World {
     if (!agent) return { error: 'Unknown agent' };
 
     const parts = command.trim().split(/\s+/);
-    const cmd = parts[0].toUpperCase();
+    const action = parts[0].toUpperCase();
     const args = parts.slice(1);
 
-    switch (cmd) {
-      case 'LOOK':      return this._cmdLook(agent);
-      case 'MOVE':      return this._cmdMove(agent, args[0]);
-      case 'SAY':       return this._cmdSay(agent, parts.slice(1).join(' '));
-      case 'BUILD':     return this._cmdBuild(agent, args[0]);
-      case 'TRADE':     return this._cmdTrade(agent, args);
-      case 'SCAVENGE':  return this._cmdScavenge(agent);
-      case 'REST':      return this._cmdRest(agent, args[0]);
-      case 'REGISTER_SERVICE': return this._cmdRegisterService(agent, args);
-      case 'REMOVE_SERVICE':   return this._cmdRemoveService(agent, args);
-      case 'INVOKE_SERVICE':   return this._cmdInvokeService(agent, args);
-      case 'POST_BOUNTY':      return this._cmdPostBounty(agent, args);
-      case 'CLAIM_BOUNTY':     return this._cmdClaimBounty(agent, args);
-      case 'RATE':             return this._cmdRate(agent, args);
-      default:
-        return { error: `Unknown command: ${cmd}` };
-    }
-  }
-
-  _cmdLook(agent) {
-    const vision = 3;
-    const visibleTiles = [];
-    const visibleAgents = [];
-
-    for (let dy = -vision; dy <= vision; dy++) {
-      for (let dx = -vision; dx <= vision; dx++) {
-        const tile = this.getTile(agent.x + dx, agent.y + dy);
-        if (tile) {
-          visibleTiles.push(tile);
-        }
-      }
-    }
-
-    for (const a of this.agents.values()) {
-      if (a.id === agent.id) continue;
-      const dist = Math.abs(a.x - agent.x) + Math.abs(a.y - agent.y);
-      if (dist <= vision) {
-        visibleAgents.push({
-          id: a.id,
-          name: a.name,
-          archetype: a.archetype,
-          x: a.x,
-          y: a.y,
-          reputation: { transactions: a.reputation.transactions, avgRating: this._avgRating(a) },
-          services: a.services,
-        });
-      }
-    }
-
-    // Recent messages in earshot
-    const heard = this.messages
-      .filter(m => m.tick >= this.tick - 3)
-      .filter(m => Math.abs(m.x - agent.x) + Math.abs(m.y - agent.y) <= vision)
-      .filter(m => m.from !== agent.name)
-      .slice(-5);
-
-    // Nearby bounties
-    const nearbyBounties = this.bounties.filter(b => !b.claimed);
-
-    return {
-      agent: {
-        name: agent.name,
-        archetype: agent.archetype,
-        x: agent.x,
-        y: agent.y,
-        energy: agent.energy,
-        inventory: agent.inventory,
-        tilesOwned: agent.tilesOwned,
-        reputation: { transactions: agent.reputation.transactions, avgRating: this._avgRating(agent) },
-      },
-      tiles: visibleTiles,
-      agents: visibleAgents,
-      messages: heard,
-      bounties: nearbyBounties,
-      tick: this.tick,
+    const commands = {
+      LOOK:             () => cmd.cmdLook(this, agent),
+      MOVE:             () => cmd.cmdMove(this, agent, args[0]),
+      SAY:              () => cmd.cmdSay(this, agent, parts.slice(1).join(' ')),
+      BUILD:            () => cmd.cmdBuild(this, agent, args[0]),
+      TRADE:            () => cmd.cmdTrade(this, agent, args),
+      SCAVENGE:         () => cmd.cmdScavenge(this, agent),
+      REST:             () => cmd.cmdRest(this, agent, args[0]),
+      REGISTER_SERVICE: () => cmd.cmdRegisterService(this, agent, args),
+      REMOVE_SERVICE:   () => cmd.cmdRemoveService(this, agent, args),
+      INVOKE_SERVICE:   () => cmd.cmdInvokeService(this, agent, args),
+      POST_BOUNTY:      () => cmd.cmdPostBounty(this, agent, args),
+      CLAIM_BOUNTY:     () => cmd.cmdClaimBounty(this, agent, args),
+      RATE:             () => cmd.cmdRate(this, agent, args),
     };
-  }
 
-  _rollLoot(tile) {
-    const names = LOOT_NAMES[tile.resource] || LOOT_NAMES.coral;
-    const items = [];
-
-    // Roll each tier independently — you always get a chance at each
-    for (let i = 0; i < RARITY_TABLE.length; i++) {
-      const tier = RARITY_TABLE[i];
-      if (Math.random() < tier.chance) {
-        items.push({
-          id: crypto.randomUUID(),
-          name: names[i],
-          rarity: tier.rarity,
-          color: tier.color,
-          resource: tile.resource,
-          foundAt: { x: tile.x, y: tile.y },
-          foundTick: this.tick,
-        });
-      }
-    }
-
-    return items;
-  }
-
-  _cmdMove(agent, direction) {
-    if (!direction) return { error: 'Usage: MOVE <N|S|E|W>' };
-
-    const dirs = { N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0] };
-    const d = dirs[direction.toUpperCase()];
-    if (!d) return { error: `Invalid direction: ${direction}` };
-
-    const archeCost = ARCHETYPES[agent.archetype].moveCost;
-    const cost = 1 + archeCost; // base 1 + archetype modifier (scouts get 0)
-    if (agent.energy < cost) return { error: `Not enough energy (need ${cost}, have ${agent.energy})` };
-
-    const nx = agent.x + d[0];
-    const ny = agent.y + d[1];
-
-    const tile = this.getTile(nx, ny);
-    if (!tile) return { error: `Can't move ${direction} — unexplored void` };
-
-    agent.energy -= cost;
-    agent.x = nx;
-    agent.y = ny;
-
-    const result = { ok: true, message: `Moved ${direction} to (${nx},${ny})`, energy: agent.energy };
-
-    this._log(`${agent.name} moved ${direction} to (${nx},${ny})`);
-    return result;
-  }
-
-  _cmdSay(agent, text) {
-    if (!text) return { error: 'Usage: SAY <message>' };
-    if (text.length > 200) text = text.slice(0, 200);
-
-    const msg = { from: agent.name, x: agent.x, y: agent.y, text, tick: this.tick };
-    this.messages.push(msg);
-    if (this.messages.length > 100) this.messages = this.messages.slice(-100);
-
-    this._log(`${agent.name} says: "${text}"`);
-    return { ok: true, message: `You said: "${text}"` };
-  }
-
-  // Resource costs to mint a tile, based on the tile's resource type.
-  // You need a mix of resources you may not have — forcing trade.
-  static TILE_MINT_COSTS = {
-    coral:   { coral: 3, crystal: 2, kelp: 0, shell: 1 },
-    crystal: { coral: 1, crystal: 3, kelp: 2, shell: 0 },
-    kelp:    { coral: 0, crystal: 1, kelp: 3, shell: 2 },
-    shell:   { coral: 2, crystal: 0, kelp: 1, shell: 3 },
-  };
-
-  _cmdBuild(agent, symbol) {
-    const tile = this.getTile(agent.x, agent.y);
-    if (!tile) return { error: 'No tile here' };
-
-    if (tile.built) {
-      return { error: tile.owner === agent.id ? 'You already built here' : 'This tile is owned by another agent' };
-    }
-
-    // First tile is free
-    const isFirstTile = agent.tilesOwned === 0;
-
-    // Check energy first so resources aren't lost on failure
-    const energyCost = ARCHETYPES[agent.archetype].buildCost;
-    if (agent.energy < energyCost) return { error: `Not enough energy (need ${energyCost}, have ${agent.energy})` };
-
-    if (!isFirstTile) {
-      // Check resource costs
-      const costs = World.TILE_MINT_COSTS[tile.resource] || {};
-      const missing = [];
-      for (const [res, amount] of Object.entries(costs)) {
-        if (amount > 0 && (agent.inventory[res] || 0) < amount) {
-          missing.push(`${amount} ${res} (have ${agent.inventory[res] || 0})`);
-        }
-      }
-      if (missing.length > 0) {
-        return { error: `Need resources to mint this ${tile.resource} tile: ${missing.join(', ')}` };
-      }
-
-      // Deduct resources (safe — energy and resources both verified)
-      for (const [res, amount] of Object.entries(costs)) {
-        if (amount > 0) {
-          agent.inventory[res] -= amount;
-        }
-      }
-    }
-
-    agent.energy -= energyCost;
-    tile.built = true;
-    tile.owner = agent.id;
-    tile.symbol = symbol || '#';
-    agent.tilesOwned++;
-
-    const revealed = this._revealNeighbors(agent.x, agent.y);
-    const msg = isFirstTile
-      ? `Claimed home tile at (${agent.x},${agent.y})`
-      : `Minted ${tile.resource} tile at (${agent.x},${agent.y})`;
-    this._log(`${agent.name} ${msg}, revealed ${revealed.length} new tiles`);
-    return {
-      ok: true,
-      message: msg,
-      revealed: revealed.map(t => ({ x: t.x, y: t.y, resource: t.resource })),
-      energy: agent.energy,
-      isHome: isFirstTile,
-    };
-  }
-
-  _cmdTrade(agent, args) {
-    // TRADE <agentName> <give_resource> <give_amount> <want_resource> <want_amount>
-    if (args.length < 4) return { error: 'Usage: TRADE <agentName> <give_resource> <give_amount> <want_resource> <want_amount>' };
-
-    const [targetName, giveRes, giveAmtStr, wantRes, wantAmtStr] = args;
-    const giveAmt = parseInt(giveAmtStr) || 1;
-    const wantAmt = parseInt(wantAmtStr) || 1;
-
-    if (agent.energy < 1) return { error: 'Not enough energy' };
-
-    const target = [...this.agents.values()].find(a => a.name === targetName);
-    if (!target) return { error: `Agent '${targetName}' not found` };
-
-    const dist = Math.abs(target.x - agent.x) + Math.abs(target.y - agent.y);
-    if (dist > 2) return { error: `${targetName} is too far away (distance: ${dist})` };
-
-    if ((agent.inventory[giveRes] || 0) < giveAmt) {
-      return { error: `You don't have ${giveAmt} ${giveRes}` };
-    }
-    if ((target.inventory[wantRes] || 0) < wantAmt) {
-      return { error: `${targetName} doesn't have ${wantAmt} ${wantRes}` };
-    }
-
-    agent.energy -= 1;
-    agent.inventory[giveRes] -= giveAmt;
-    agent.inventory[wantRes] = (agent.inventory[wantRes] || 0) + wantAmt;
-    target.inventory[wantRes] -= wantAmt;
-    target.inventory[giveRes] = (target.inventory[giveRes] || 0) + giveAmt;
-
-    // Both get reputation for trading
-    agent.reputation.transactions++;
-    target.reputation.transactions++;
-    agent.tradeCount = (agent.tradeCount || 0) + 1;
-    target.tradeCount = (target.tradeCount || 0) + 1;
-
-    this._log(`${agent.name} traded ${giveAmt} ${giveRes} for ${wantAmt} ${wantRes} with ${target.name}`);
-    return { ok: true, message: `Traded ${giveAmt} ${giveRes} for ${wantAmt} ${wantRes} with ${targetName}` };
-  }
-
-  _cmdRest(agent, resource) {
-    if (!resource) return { error: 'Usage: REST <resource> — consume 3 of a resource for +8 energy' };
-    resource = resource.toLowerCase();
-    if (!RESOURCES.includes(resource)) return { error: `Unknown resource: ${resource}. Options: ${RESOURCES.join(', ')}` };
-    if ((agent.inventory[resource] || 0) < 3) return { error: `Need 3 ${resource} (have ${agent.inventory[resource] || 0})` };
-    agent.inventory[resource] -= 3;
-    agent.energy += 8; // No cap — REST can push above MAX_ENERGY
-    this._log(`${agent.name} rested, consumed 3 ${resource} for energy`);
-    return { ok: true, message: `Consumed 3 ${resource} — energy now ${agent.energy}/${MAX_ENERGY}`, energy: agent.energy };
-  }
-
-  _cmdScavenge(agent) {
-    const SCAVENGE_COST = 2;
-    if (agent.energy < SCAVENGE_COST) return { error: `Not enough energy (need ${SCAVENGE_COST}, have ${agent.energy})` };
-
-    const tile = this.getTile(agent.x, agent.y);
-    if (!tile) return { error: 'Nothing to scavenge here' };
-
-    agent.energy -= SCAVENGE_COST;
-    agent.scavengeCount = (agent.scavengeCount || 0) + 1;
-
-    // 40% chance to find nothing — scavenging is risky
-    if (Math.random() < 0.4) {
-      this._log(`${agent.name} scavenged at (${agent.x},${agent.y}) — found nothing`);
-      return { ok: true, message: 'Scavenged... found nothing this time.', energy: agent.energy };
-    }
-
-    // Tile owner gets a cut of resources found
-    const tileOwner = tile.owner ? this.agents.get(tile.owner) : null;
-
-    // Get some of the tile's resource
-    const baseAmount = tile.resource === ARCHETYPES[agent.archetype]?.affinity ? 3 : 1;
-    agent.inventory[tile.resource] = (agent.inventory[tile.resource] || 0) + baseAmount;
-
-    // Owner gets a portion if someone else scavenges their tile
-    if (tileOwner && tileOwner.id !== agent.id) {
-      tileOwner.inventory[tile.resource] = (tileOwner.inventory[tile.resource] || 0) + 1;
-    }
-
-    // Roll for loot items
-    const items = this._rollLoot(tile);
-    let message = `Scavenged ${baseAmount} ${tile.resource}`;
-
-    if (items.length > 0) {
-      if (!agent.loot) agent.loot = [];
-      agent.loot.push(...items);
-      const best = items.reduce((a, b) =>
-        RARITY_TABLE.findIndex(t => t.rarity === b.rarity) > RARITY_TABLE.findIndex(t => t.rarity === a.rarity) ? b : a
-      );
-      message += items.length === 1
-        ? ` — Found ${best.rarity} ${best.name}!`
-        : ` — Found ${items.length} items! (${best.rarity} ${best.name})`;
-      for (const item of items) {
-        this._log(`${agent.name} found ${item.rarity} ${item.name} at (${agent.x},${agent.y})`);
-      }
-    }
-
-    this._log(`${agent.name} scavenged at (${agent.x},${agent.y})`);
-    return { ok: true, message, energy: agent.energy, loot: items.length > 0 ? items : undefined };
-  }
-
-  _cmdRegisterService(agent, args) {
-    // REGISTER_SERVICE <name> <price> <description...>
-    if (args.length < 3) return { error: 'Usage: REGISTER_SERVICE <name> <price> <description...>' };
-
-    if (agent.energy < 2) return { error: 'Not enough energy' };
-
-    const name = args[0];
-    if (/\s/.test(name)) return { error: 'Service name cannot contain spaces' };
-    if (agent.services.some(s => s.name === name)) return { error: `You already have a service called '${name}'` };
-    const price = parseFloat(args[1]);
-    if (!Number.isFinite(price) || price < 0 || price > 1000) return { error: 'Price must be a number between 0 and 1000' };
-    const description = args.slice(2).join(' ');
-
-    const tile = this.getTile(agent.x, agent.y);
-    if (!tile || tile.owner !== agent.id) {
-      return { error: 'You must be on a tile you own to register a service' };
-    }
-
-    agent.energy -= 2;
-    const service = { name, price, description, tileX: agent.x, tileY: agent.y };
-    agent.services.push(service);
-    tile.services.push({ agentId: agent.id, ...service });
-
-    this._log(`${agent.name} registered service: ${name} (${price} USDC)`);
-    return { ok: true, message: `Registered service: ${name} at ${price} USDC`, service };
-  }
-
-  _cmdRemoveService(agent, args) {
-    if (args.length < 1) return { error: 'Usage: REMOVE_SERVICE <name>' };
-    const name = args[0];
-
-    const idx = agent.services.findIndex(s => s.name === name);
-    if (idx === -1) return { error: `You don't have a service called '${name}'` };
-
-    agent.services.splice(idx, 1);
-
-    // Remove from all tiles
-    for (const t of this.tiles.values()) {
-      t.services = (t.services || []).filter(s => !(s.agentId === agent.id && s.name === name));
-    }
-
-    this._log(`${agent.name} removed service: ${name}`);
-    return { ok: true, message: `Removed service: ${name}` };
-  }
-
-  _cmdInvokeService(agent, args) {
-    // INVOKE_SERVICE <agentName> <serviceName> <args...>
-    if (args.length < 2) return { error: 'Usage: INVOKE_SERVICE <agentName> <serviceName> [args...]' };
-
-    if (agent.energy < 1) return { error: 'Not enough energy' };
-
-    const [targetName, serviceName, ...serviceArgs] = args;
-    const target = [...this.agents.values()].find(a => a.name === targetName);
-    if (!target) return { error: `Agent '${targetName}' not found` };
-
-    const service = target.services.find(s => s.name === serviceName);
-    if (!service) return { error: `${targetName} has no service called '${serviceName}'` };
-
-    agent.energy -= 1;
-    agent.reputation.transactions++;
-    target.reputation.transactions++;
-
-    // Handle NPC built-in services
-    const npcResult = this._handleNpcService(agent, target, serviceName, serviceArgs);
-    if (npcResult) {
-      this._log(`${agent.name} used ${target.name}'s ${serviceName}: ${npcResult.message}`);
-      return npcResult;
-    }
-
-    this._log(`${agent.name} invoked ${target.name}'s ${serviceName} service`);
-    return {
-      ok: true,
-      message: `Invoked ${targetName}'s ${serviceName} service`,
-      service,
-      args: serviceArgs.join(' '),
-      // In production: payment receipt, service response
-    };
-  }
-
-  _handleNpcService(agent, npc, serviceName, args) {
-    // Barnacle: exchange — swap resources 1:1
-    if (npc.id === 'npc-merchant' && serviceName === 'exchange') {
-      if (args.length < 2) return { ok: false, error: 'Usage: INVOKE_SERVICE Barnacle exchange <give_resource> <want_resource>' };
-      const [give, want] = args;
-      if (!RESOURCES.includes(give) || !RESOURCES.includes(want)) return { ok: false, error: `Unknown resource. Options: ${RESOURCES.join(', ')}` };
-      if (give === want) return { ok: false, error: 'Cannot exchange same resource' };
-      if ((agent.inventory[give] || 0) < 1) return { ok: false, error: `You don't have any ${give}` };
-
-      agent.inventory[give] -= 1;
-      agent.inventory[want] = (agent.inventory[want] || 0) + 1;
-      return { ok: true, message: `Exchanged 1 ${give} for 1 ${want} with ${npc.name}` };
-    }
-
-    // Barnacle: recharge — full energy
-    if (npc.id === 'npc-merchant' && serviceName === 'recharge') {
-      agent.energy = MAX_ENERGY;
-      return { ok: true, message: `${npc.name} recharged your energy to ${MAX_ENERGY}`, energy: agent.energy };
-    }
-
-    // Polyp: combine — 3 of any resource → 1 rare material (added to loot)
-    if (npc.id === 'npc-crafter' && serviceName === 'combine') {
-      if (args.length < 1) return { ok: false, error: 'Usage: INVOKE_SERVICE Polyp combine <resource>' };
-      const res = args[0];
-      if (!RESOURCES.includes(res)) return { ok: false, error: `Unknown resource. Options: ${RESOURCES.join(', ')}` };
-      if ((agent.inventory[res] || 0) < 3) return { ok: false, error: `Need 3 ${res} (have ${agent.inventory[res] || 0})` };
-
-      agent.inventory[res] -= 3;
-      const loot = {
-        id: crypto.randomUUID(),
-        name: `Refined ${res.charAt(0).toUpperCase() + res.slice(1)}`,
-        rarity: 'uncommon',
-        color: '#00b894',
-        resource: res,
-        foundAt: { x: npc.x, y: npc.y },
-        foundTick: this.tick,
-      };
-      if (!agent.loot) agent.loot = [];
-      agent.loot.push(loot);
-      return { ok: true, message: `${npc.name} combined 3 ${res} into ${loot.name}!`, loot };
-    }
-
-    return null; // Not an NPC service
-  }
-
-  _cmdPostBounty(agent, args) {
-    // POST_BOUNTY <reward> <description...>
-    if (args.length < 2) return { error: 'Usage: POST_BOUNTY <reward_usdc> <description...>' };
-
-    if (agent.energy < 1) return { error: 'Not enough energy' };
-
-    const reward = parseFloat(args[0]) || 0.01;
-    const description = args.slice(1).join(' ');
-
-    agent.energy -= 1;
-    const bounty = {
-      id: crypto.randomUUID(),
-      poster: agent.name,
-      posterId: agent.id,
-      reward,
-      description,
-      claimed: false,
-      claimedBy: null,
-      completed: false,
-      postedAt: this.tick,
-    };
-    this.bounties.push(bounty);
-
-    this._log(`${agent.name} posted bounty: "${description}" for ${reward} USDC`);
-    return { ok: true, message: `Posted bounty: "${description}" for ${reward} USDC`, bounty };
-  }
-
-  _cmdClaimBounty(agent, args) {
-    // CLAIM_BOUNTY <bountyId>
-    if (args.length < 1) return { error: 'Usage: CLAIM_BOUNTY <bountyId>' };
-
-    const bounty = this.bounties.find(b => b.id === args[0] && !b.claimed);
-    if (!bounty) return { error: 'Bounty not found or already claimed' };
-    if (bounty.posterId === agent.id) return { error: "Can't claim your own bounty" };
-
-    bounty.claimed = true;
-    bounty.claimedBy = agent.name;
-    bounty.claimedById = agent.id;
-
-    this._log(`${agent.name} claimed bounty: "${bounty.description}"`);
-    return { ok: true, message: `Claimed bounty: "${bounty.description}"`, bounty };
-  }
-
-  _cmdRate(agent, args) {
-    // RATE <agentName> <score 1-5>
-    if (args.length < 2) return { error: 'Usage: RATE <agentName> <score 1-5>' };
-
-    const [targetName, scoreStr] = args;
-    const score = parseInt(scoreStr);
-    if (score < 1 || score > 5) return { error: 'Score must be 1-5' };
-
-    const target = [...this.agents.values()].find(a => a.name === targetName);
-    if (!target) return { error: `Agent '${targetName}' not found` };
-    if (target.id === agent.id) return { error: "Can't rate yourself" };
-
-    target.reputation.totalRating += score;
-    target.reputation.count++;
-
-    this._log(`${agent.name} rated ${target.name}: ${score}/5`);
-    return { ok: true, message: `Rated ${targetName}: ${score}/5`, newAvg: this._avgRating(target) };
+    const handler = commands[action];
+    if (!handler) return { error: `Unknown command: ${action}` };
+    return handler();
   }
 
   // ── Tick ────────────────────────────────────────────────────────────
@@ -687,7 +177,7 @@ export class World {
     this.bounties = this.bounties.filter(b => !b.completed || (this.tick - (b.completedAt || 0)) < 50);
 
     // Generate random quests periodically
-    const activeQuests = this.bounties.filter(b => !b.completed && b.posterId === 'system');
+    const activeQuests = this.bounties.filter(b => !b.completed && b.posterId === 'system' && !b.forAgentId);
     if (this.tick % 20 === 0 && activeQuests.length < 10 && this.agents.size > 0) {
       const quest = this._generateRandomQuest();
       if (quest) {
@@ -702,15 +192,9 @@ export class World {
     const resource = RESOURCES[Math.floor(Math.random() * RESOURCES.length)];
     const amount = Math.floor(Math.random() * 5) + 2;
 
-    // Pick a random revealed tile for delivery quests
-    const tiles = [...this.tiles.values()];
-    const targetTile = tiles[Math.floor(Math.random() * tiles.length)];
-
     const desc = template.desc
       .replace('{amount}', amount)
-      .replace('{resource}', resource)
-      .replace('{x}', targetTile.x)
-      .replace('{y}', targetTile.y);
+      .replace('{resource}', resource);
 
     const rewardBase = { trade: 0.04, collect: 0.015, scavenge: 0.01 };
     const reward = Math.round((rewardBase[template.type] || 0.02) * amount * 100) / 100;
@@ -765,7 +249,7 @@ export class World {
     const data = JSON.stringify({
       tick: this.tick,
       tiles: Object.fromEntries(this.tiles),
-      agents: Object.fromEntries(this.agents), // full agent data including internal fields
+      agents: Object.fromEntries(this.agents),
       bounties: this.bounties,
       messages: this.messages.slice(-20),
     }, null, 2);
@@ -786,12 +270,10 @@ export class World {
     }
     this.tick = data.tick || 0;
 
-    // Restore tiles
     for (const [key, tdata] of Object.entries(data.tiles || {})) {
       this.tiles.set(key, tdata);
     }
 
-    // Restore agents
     for (const [id, adata] of Object.entries(data.agents || {})) {
       this.agents.set(id, {
         ...adata,
@@ -803,7 +285,6 @@ export class World {
       });
     }
 
-    // Restore bounties
     this.bounties = data.bounties || [];
     this.messages = data.messages || [];
 
