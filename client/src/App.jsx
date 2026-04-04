@@ -4,7 +4,9 @@ import WorldGrid from './WorldGrid.jsx';
 import ActivityFeed from './ActivityFeed.jsx';
 import AgentPanel from './AgentPanel.jsx';
 
-const SOCKET_URL = 'http://localhost:3001';
+const SOCKET_URL = window.location.hostname === 'localhost'
+  ? 'http://localhost:3001'
+  : `http://${window.location.hostname}:3001`;
 
 export default function App() {
   const [socket, setSocket] = useState(null);
