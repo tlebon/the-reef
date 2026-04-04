@@ -269,6 +269,12 @@ io.on('connection', (socket) => {
 
   // Agent command
   socket.on('agent:command', async ({ agentId, command }) => {
+    // Enforce agent ownership — only control your own agent
+    if (socket.agentId !== agentId) {
+      socket.emit('agent:result', { command, result: { error: 'Not authorized — you can only control your own agent' } });
+      return;
+    }
+
     // For paid service invocations: check balance → execute → deduct
     const parts = command.trim().split(/\s+/);
     if (parts[0]?.toUpperCase() === 'INVOKE_SERVICE' && parts.length >= 3) {
@@ -293,11 +299,16 @@ io.on('connection', (socket) => {
         }
 
         // Step 3: Deduct payment (command succeeded)
-        const payResult = await payments.processPayment(agentId, target.id, service.price, serviceName);
-        if (payResult.error) {
-          result.paymentError = payResult.error;
-        } else {
-          result.payment = payResult;
+        try {
+          const payResult = await payments.processPayment(agentId, target.id, service.price, serviceName);
+          if (payResult.error) {
+            result.paymentError = payResult.error;
+          } else {
+            result.payment = payResult;
+          }
+        } catch (err) {
+          result.paymentError = `Payment failed: ${err.message}`;
+          console.error(`  Payment error: ${err.message}`);
         }
 
         // Check quest completion for paid services too
