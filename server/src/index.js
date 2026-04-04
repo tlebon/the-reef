@@ -11,6 +11,7 @@ import { Server } from 'socket.io';
 import { World } from './world.js';
 import { ChainConnector } from './chain.js';
 import { seedWorld, tickNPCs } from './seed.js';
+import { checkQuests } from './quests.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -97,8 +98,15 @@ io.on('connection', (socket) => {
     const result = world.execute(agentId, command);
     socket.emit('agent:result', { command, result });
 
-    // Broadcast state update if the command changed something
+    // Check quest completion after every action
     if (result.ok) {
+      const agent = world.getAgent(agentId);
+      if (agent) {
+        const completed = checkQuests(world, agent);
+        if (completed.length > 0) {
+          socket.emit('quest:completed', completed);
+        }
+      }
       io.emit('world:update', world.getState());
     }
   });

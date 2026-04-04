@@ -63,6 +63,13 @@ export default function App() {
       addActivity(`You joined as ${agent.name}!`);
     });
 
+    s.on('quest:completed', (quests) => {
+      for (const q of quests) {
+        addActivity(`Quest complete: "${q.description}" — +${q.reward} USDC!`);
+      }
+      setCompletedQuest(quests[0]);
+    });
+
     s.on('agent:result', ({ command, result }) => {
       if (result.error) {
         addActivity(`Error: ${result.error}`);
@@ -84,6 +91,7 @@ export default function App() {
   }, []);
 
   const [joining, setJoining] = useState(false);
+  const [completedQuest, setCompletedQuest] = useState(null);
 
   const handleJoin = (name, archetype) => {
     if (!socket) return;
@@ -133,6 +141,17 @@ export default function App() {
         )}
       </header>
 
+      {completedQuest && (
+        <div style={styles.modal}>
+          <div style={styles.modalContent}>
+            <h3 style={styles.modalTitle}>Quest Complete!</h3>
+            <p style={styles.modalDesc}>{completedQuest.description}</p>
+            <p style={styles.modalReward}>+{completedQuest.reward} USDC</p>
+            <button style={styles.modalBtn} onClick={() => setCompletedQuest(null)}>Continue</button>
+          </div>
+        </div>
+      )}
+
       <div style={styles.mainWrapper}>
       <div style={styles.main}>
         <div style={styles.gridContainer}>
@@ -169,7 +188,7 @@ export default function App() {
 
           {!selectedAgent && !selectedTile && !showJoin && (
             <>
-              <BountyPanel bounties={bounties} agent={myAgentId ? worldState.agents[myAgentId] : null} />
+              <BountyPanel bounties={bounties} />
               <div style={styles.panel}>
                 <h3 style={styles.panelTitle}>Agents</h3>
                 {agents.length === 0 ? (
@@ -326,5 +345,49 @@ const styles = {
   myAgent: {
     color: '#00d4aa',
     fontSize: '0.85rem',
+  },
+  modal: {
+    position: 'fixed',
+    top: 0, left: 0, right: 0, bottom: 0,
+    background: 'rgba(0,0,0,0.7)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  modalContent: {
+    background: '#0d1220',
+    border: '1px solid #00d4aa',
+    borderRadius: '8px',
+    padding: '32px',
+    textAlign: 'center',
+    maxWidth: '360px',
+  },
+  modalTitle: {
+    color: '#00d4aa',
+    fontSize: '1.2rem',
+    marginBottom: '12px',
+  },
+  modalDesc: {
+    color: '#c8d6e5',
+    fontSize: '0.9rem',
+    marginBottom: '8px',
+  },
+  modalReward: {
+    color: '#fdcb6e',
+    fontSize: '1.1rem',
+    fontWeight: 700,
+    marginBottom: '20px',
+  },
+  modalBtn: {
+    background: '#00d4aa',
+    color: '#0a0e17',
+    border: 'none',
+    padding: '10px 32px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    fontSize: '0.9rem',
   },
 };

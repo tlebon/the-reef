@@ -6,11 +6,11 @@
  */
 
 const SEED_BOUNTIES = [
-  { id: 'seed-build',   reward: 0.01,  description: 'Build your first structure on any tile' },
-  { id: 'seed-explore', reward: 0.005, description: 'Explore and discover a new tile' },
-  { id: 'seed-trade',   reward: 0.02,  description: 'Complete a trade with another agent' },
-  { id: 'seed-service', reward: 0.015, description: 'Register a service on a tile you own' },
-  { id: 'seed-invoke',  reward: 0.03,  description: "Invoke another agent's service" },
+  { id: 'seed-build',   reward: 0.01,  questType: 'build_first',      description: 'Build your first structure on any tile' },
+  { id: 'seed-scavenge',reward: 0.005, questType: 'scavenge', target: 3, description: 'Scavenge 3 times' },
+  { id: 'seed-trade',   reward: 0.02,  questType: 'trade',   target: 1, description: 'Complete a trade with another agent' },
+  { id: 'seed-service', reward: 0.015, questType: 'register_service',  description: 'Register a service on a tile you own' },
+  { id: 'seed-collect',  reward: 0.01, questType: 'collect', target: 10, resource: 'coral', description: 'Collect 10 coral' },
 ];
 
 const NPC_AGENTS = [
@@ -66,6 +66,9 @@ export function seedWorld(world) {
       posterId: 'system',
       reward: bounty.reward,
       description: bounty.description,
+      questType: bounty.questType,
+      target: bounty.target,
+      resource: bounty.resource,
       claimed: false,
       claimedBy: null,
       completed: false,

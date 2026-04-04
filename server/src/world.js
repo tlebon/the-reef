@@ -413,6 +413,7 @@ export class World {
     if (!tile) return { error: 'Nothing to scavenge here' };
 
     agent.energy -= SCAVENGE_COST;
+    agent.scavengeCount = (agent.scavengeCount || 0) + 1;
 
     // 40% chance to find nothing — scavenging is risky
     if (Math.random() < 0.4) {
