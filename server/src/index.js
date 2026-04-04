@@ -140,15 +140,12 @@ io.on('connection', (socket) => {
     const result = world.addAgent(id, name, archetype, {
       ownerWallet: walletAddress || null,
       delegateWallet: delegateWallet || null,
+      ensName: ens.enabled ? ens.getSubname(name) : null,
     });
     if (result.error) {
       socket.emit('agent:error', result);
     } else {
       socket.agentId = result.agent.id;
-      // Only set ENS name if ENS is enabled (actually registered on-chain)
-      if (ens.enabled) {
-        result.agent.ensName = ens.getSubname(name);
-      }
 
       socket.emit('agent:registered', result);
       io.emit('world:agent_joined', { agent: result.agent, tile: result.tile });
