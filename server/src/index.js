@@ -168,8 +168,8 @@ function verifyWalletAuth(req, res, next) {
     return res.status(403).json({ error: 'Invalid signature message — missing timestamp' });
   }
   const sigAge = Date.now() - parseInt(tsMatch[1]);
-  if (sigAge > 15 * 60 * 1000) {
-    return res.status(403).json({ error: 'Signature expired' });
+  if (sigAge < 0 || sigAge > 15 * 60 * 1000) {
+    return res.status(403).json({ error: 'Signature timestamp invalid' });
   }
 
   next();

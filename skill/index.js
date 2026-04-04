@@ -11,6 +11,9 @@
  * Authentication: all requests require x-wallet-signature and x-wallet-message
  * headers. The caller must set REEF_WALLET_SIGNATURE and REEF_WALLET_MESSAGE
  * env vars (obtained by signing with the agent's wallet).
+ *
+ * IMPORTANT: Signatures expire after 15 minutes. For long-running sessions,
+ * regenerate the signature and update the env vars before they expire.
  */
 
 const BASE_URL = process.env.REEF_SERVER || 'http://localhost:3001';
