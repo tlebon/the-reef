@@ -117,6 +117,27 @@ describe("ReefResource", function () {
     await expect(resource.connect(user2).claimResources(user1.address, ids, amounts, nonce, signature))
       .to.be.revertedWith("ReefResource: can only claim for yourself");
   });
+
+  it("should reject claim with invalid signature", async function () {
+    const ids = [0];
+    const amounts = [10];
+    const nonce = 0;
+
+    // Sign with wrong signer (not owner)
+    const hash = ethers.solidityPackedKeccak256(
+      ["address", "uint256[]", "uint256[]", "uint256", "uint256", "address"],
+      [user1.address, ids, amounts, nonce, (await ethers.provider.getNetwork()).chainId, await resource.getAddress()]
+    );
+    const signature = await user2.signMessage(ethers.getBytes(hash));
+
+    await expect(resource.connect(user1).claimResources(user1.address, ids, amounts, nonce, signature))
+      .to.be.revertedWith("ReefResource: invalid signature");
+  });
+
+  it("should return loot name", async function () {
+    await resource.mintLoot(user1.address, "Void Crystal", "legendary", 1);
+    expect(await resource.name(100)).to.equal("Void Crystal");
+  });
 });
 
 describe("ReefTile", function () {
@@ -164,6 +185,28 @@ describe("ReefTile", function () {
   it("should reject non-owner mint", async function () {
     await expect(tile.connect(user1).mintTile(user1.address, 0, 0, 0, "#"))
       .to.be.revertedWithCustomError(tile, "OwnableUnauthorizedAccount");
+  });
+
+  it("should store and return symbol", async function () {
+    await tile.mintTile(user1.address, 5, 5, 2, "~");
+    const data = await tile.getTile(1);
+    expect(data.symbol).to.equal("~");
+  });
+
+  it("should return tokenURI with baseURI", async function () {
+    await tile.mintTile(user1.address, 0, 0, 0, "#");
+    await tile.setBaseURI("https://reef.game/tiles/");
+    expect(await tile.tokenURI(1)).to.equal("https://reef.game/tiles/1");
+  });
+
+  it("should return empty tokenURI without baseURI", async function () {
+    await tile.mintTile(user1.address, 0, 0, 0, "#");
+    expect(await tile.tokenURI(1)).to.equal("");
+  });
+
+  it("should revert tokenURI for nonexistent tile", async function () {
+    await expect(tile.tokenURI(999))
+      .to.be.revertedWith("ReefTile: tile does not exist");
   });
 });
 
@@ -233,5 +276,45 @@ describe("ReefAgent", function () {
   it("should reject non-owner mint", async function () {
     await expect(agent.connect(user1).mintAgent(user1.address, "Alice", "builder", "alice.reef.eth"))
       .to.be.revertedWithCustomError(agent, "OwnableUnauthorizedAccount");
+  });
+
+  it("should set and get delegate wallet", async function () {
+    await agent.mintAgent(user1.address, "Alice", "builder", "alice.reef.eth");
+    await agent.connect(user1).setDelegate(1, user2.address);
+    const data = await agent.getAgent(1);
+    expect(data.delegateWallet).to.equal(user2.address);
+  });
+
+  it("should reject setDelegate from non-owner of token", async function () {
+    await agent.mintAgent(user1.address, "Alice", "builder", "alice.reef.eth");
+    await expect(agent.connect(user2).setDelegate(1, user2.address))
+      .to.be.revertedWith("ReefAgent: not token owner");
+  });
+
+  it("should clear delegate on transfer", async function () {
+    await agent.mintAgent(user1.address, "Alice", "builder", "alice.reef.eth");
+    await agent.connect(user1).setDelegate(1, user2.address);
+    // Transfer to a fresh address (pending signer)
+    const [,,, pending] = await ethers.getSigners();
+    await agent.connect(user1).transferFrom(user1.address, pending.address, 1);
+    const data = await agent.getAgent(1);
+    expect(data.delegateWallet).to.equal(ethers.ZeroAddress);
+  });
+
+  it("should return tokenURI with avatar", async function () {
+    await agent.mintAgent(user1.address, "Alice", "builder", "alice.reef.eth");
+    await agent.setAvatar(1, "ipfs://QmAvatar");
+    expect(await agent.tokenURI(1)).to.equal("ipfs://QmAvatar");
+  });
+
+  it("should return tokenURI with baseURI when no avatar", async function () {
+    await agent.mintAgent(user1.address, "Alice", "builder", "alice.reef.eth");
+    await agent.setBaseURI("https://reef.game/agents/");
+    expect(await agent.tokenURI(1)).to.equal("https://reef.game/agents/1");
+  });
+
+  it("should revert tokenURI for nonexistent agent", async function () {
+    await expect(agent.tokenURI(999))
+      .to.be.revertedWith("ReefAgent: agent does not exist");
   });
 });
