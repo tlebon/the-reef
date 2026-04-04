@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import InputModal from './InputModal';
+import { MODAL_CONFIGS, sanitizeInput } from './modalConfigs';
 
 export default function ActionBar({ agent, currentTile, messages, agents, onCommand }) {
   const [showBuild, setShowBuild] = useState(false);
   const [buildSymbol, setBuildSymbol] = useState('#');
+  const [modal, setModal] = useState(null);
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -31,10 +34,36 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
     return () => window.removeEventListener('keydown', handleKey);
   }, [onCommand]);
 
+  const closeModal = () => setModal(null);
+
   if (!agent) return null;
+
+  const renderModal = () => {
+    if (!modal) return null;
+
+    // Resolve config — static object or function (exchange/combine need ownerName)
+    const rawCfg = MODAL_CONFIGS[modal.type];
+    const config = typeof rawCfg === 'function' ? rawCfg(modal.ownerName) : rawCfg;
+    if (!config) return null;
+
+    return (
+      <InputModal
+        title={config.title}
+        fields={config.fields}
+        sanitize={sanitizeInput}
+        onCancel={closeModal}
+        onConfirm={(vals) => {
+          closeModal();
+          const cmd = config.toCommand(vals);
+          if (cmd) onCommand(cmd);
+        }}
+      />
+    );
+  };
 
   return (
     <div style={styles.container}>
+      {renderModal()}
       <div style={styles.status}>
         <span style={styles.name}>{agent.name}</span>
         <span style={styles.energy}>Energy: {agent.energy}{agent.energy > 20 ? ' (boosted)' : '/20'}</span>
@@ -76,22 +105,9 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
                   ))}
                 </div>
               )}
-              <button style={styles.actionBtn} onClick={() => {
-                const name = prompt('Service name:');
-                if (!name) return;
-                const price = prompt('Price (USDC):') || '0.01';
-                const desc = prompt('Description:') || 'A service';
-                onCommand(`REGISTER_SERVICE ${name} ${price} ${desc}`);
-              }}>+ Add service</button>
-              <button style={styles.actionBtn} onClick={() => {
-                const msg = prompt('Say something:');
-                if (msg) onCommand(`SAY ${msg}`);
-              }}>Say</button>
-              <button style={styles.actionBtn} onClick={() => {
-                const reward = prompt('Bounty reward (USDC):') || '0.01';
-                const desc = prompt('Bounty description:');
-                if (desc) onCommand(`POST_BOUNTY ${reward} ${desc}`);
-              }}>Post bounty</button>
+              <button style={styles.actionBtn} onClick={() => setModal({ type: 'register-service' })}>+ Add service</button>
+              <button style={styles.actionBtn} onClick={() => setModal({ type: 'say' })}>Say</button>
+              <button style={styles.actionBtn} onClick={() => setModal({ type: 'post-bounty' })}>Post bounty</button>
               <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
             </>
           ) : currentTile && currentTile.built ? (
@@ -102,16 +118,15 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
                 <div style={styles.serviceList}>
                   {currentTile.services.map((s, i) => (
                     <button key={i} style={styles.actionBtn} onClick={() => {
-                      // Find the owner agent name
                       const ownerName = agents.find(a => a.id === s.agentId)?.name;
                       if (!ownerName) return;
-                      const extraArgs = s.name === 'exchange'
-                        ? (() => { const g = prompt('Give resource (coral/crystal/kelp/shell):'); const w = prompt('Want resource:'); return g && w ? `${g} ${w}` : null; })()
-                        : s.name === 'combine'
-                        ? prompt('Which resource to combine? (coral/crystal/kelp/shell):')
-                        : '';
-                      if (extraArgs === null) return;
-                      onCommand(`INVOKE_SERVICE ${ownerName} ${s.name} ${extraArgs}`.trim());
+                      if (s.name === 'exchange') {
+                        setModal({ type: 'exchange', ownerName });
+                      } else if (s.name === 'combine') {
+                        setModal({ type: 'combine', ownerName });
+                      } else {
+                        onCommand(`INVOKE_SERVICE ${ownerName} ${s.name}`);
+                      }
                     }}>
                       {s.name} ({s.price} USDC) — {s.description}
                     </button>
@@ -119,10 +134,7 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
                 </div>
               )}
               <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
-              <button style={styles.actionBtn} onClick={() => {
-                const msg = prompt('Say something:');
-                if (msg) onCommand(`SAY ${msg}`);
-              }}>Say</button>
+              <button style={styles.actionBtn} onClick={() => setModal({ type: 'say' })}>Say</button>
             </>
           ) : currentTile && !currentTile.built ? (
             // On an unbuilt tile
