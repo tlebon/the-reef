@@ -3,38 +3,36 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title ReefAgent
  * @notice ERC-721 NFT representing an agent in The Reef.
  *         Stores avatar URI, archetype, and references to ENS + reputation.
  *         Tradeable — but reputation is soulbound (stays with the address).
- *
- *         For 0G prize: can be upgraded to ERC-7857 (iNFT) with encrypted
- *         metadata stored in 0G Storage.
  */
-contract ReefAgent is ERC721, Ownable {
+contract ReefAgent is ERC721, Ownable, ReentrancyGuard {
+    using Strings for uint256;
+
     struct AgentData {
         string name;
-        string archetype;    // builder, merchant, scout, crafter
-        string avatarURI;    // IPFS/0G Storage URI for avatar image
-        string ensName;      // e.g. "alice.reef.eth"
+        string archetype;
+        string avatarURI;
+        string ensName;
         uint256 mintedAt;
     }
 
+    string public baseURI;
     uint256 public nextTokenId;
     mapping(uint256 => AgentData) public agents;
-    mapping(address => uint256) public agentOfOwner; // one agent per wallet
+    mapping(address => uint256) public agentOfOwner;
 
     event AgentMinted(address indexed owner, uint256 indexed tokenId, string name, string archetype);
     event AvatarUpdated(uint256 indexed tokenId, string avatarURI);
 
     constructor() ERC721("Reef Agent", "RAGENT") Ownable(msg.sender) {}
 
-    /**
-     * @notice Mint an agent NFT.
-     *         One agent per wallet address.
-     */
     function mintAgent(
         address to,
         string calldata agentName,
@@ -47,24 +45,31 @@ contract ReefAgent is ERC721, Ownable {
         agents[tokenId] = AgentData(agentName, archetype, "", ensName, block.timestamp);
 
         _mint(to, tokenId);
-        // Set after _mint so _update doesn't see it during mint
         emit AgentMinted(to, tokenId, agentName, archetype);
         return tokenId;
     }
 
-    /**
-     * @notice Set or update the avatar image URI.
-     *         Only callable by the operator (for AI-generated avatars).
-     */
     function setAvatar(uint256 tokenId, string calldata avatarURI) external onlyOwner {
         require(agents[tokenId].mintedAt > 0, "ReefAgent: agent does not exist");
         agents[tokenId].avatarURI = avatarURI;
         emit AvatarUpdated(tokenId, avatarURI);
     }
 
-    /**
-     * @notice Get agent data.
-     */
+    function setBaseURI(string calldata uri) external onlyOwner {
+        baseURI = uri;
+    }
+
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        require(agents[tokenId].mintedAt > 0, "ReefAgent: agent does not exist");
+        if (bytes(agents[tokenId].avatarURI).length > 0) {
+            return agents[tokenId].avatarURI;
+        }
+        if (bytes(baseURI).length > 0) {
+            return string(abi.encodePacked(baseURI, tokenId.toString()));
+        }
+        return "";
+    }
+
     function getAgent(uint256 tokenId) external view returns (
         string memory agentName,
         string memory archetype,
@@ -76,22 +81,25 @@ contract ReefAgent is ERC721, Ownable {
         return (a.name, a.archetype, a.avatarURI, a.ensName, a.mintedAt);
     }
 
-    /**
-     * @notice Override transfer to update agentOfOwner mapping.
-     */
-    function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
+    function _update(address to, uint256 tokenId, address auth) internal override nonReentrant returns (address) {
         // On transfer (not mint): reject if recipient already has an agent
-        // Mints are guarded by mintAgent's own require check
         if (agents[tokenId].mintedAt > 0 && to != address(0) && agentOfOwner[to] != 0) {
             revert("ReefAgent: recipient already has an agent");
         }
-        address from = super._update(to, tokenId, auth);
+
+        // Clear sender's mapping before external call
+        address from = _ownerOf(tokenId);
         if (from != address(0)) {
             agentOfOwner[from] = 0;
         }
+
+        address result = super._update(to, tokenId, auth);
+
+        // Set receiver's mapping after transfer
         if (to != address(0)) {
             agentOfOwner[to] = tokenId;
         }
-        return from;
+
+        return result;
     }
 }
