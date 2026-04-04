@@ -2,10 +2,10 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
 describe("ReefWorld", function () {
-  let reefWorld, operator, other;
+  let reefWorld, operator, other, pending;
 
   beforeEach(async function () {
-    [operator, other] = await ethers.getSigners();
+    [operator, other, pending] = await ethers.getSigners();
     const ReefWorld = await ethers.getContractFactory("ReefWorld");
     reefWorld = await ReefWorld.deploy();
   });
@@ -32,9 +32,10 @@ describe("ReefWorld", function () {
     await expect(reefWorld.connect(other).commitTick(1, hash)).to.be.revertedWith("ReefWorld: not operator");
   });
 
-  it("should reject verifyTick for non-existent tick", async function () {
+  it("should return false for non-existent tick in verifyTick", async function () {
     const hash = ethers.keccak256(ethers.toUtf8Bytes("state"));
-    await expect(reefWorld.verifyTick(1, hash)).to.be.revertedWith("ReefWorld: tick does not exist");
+    expect(await reefWorld.verifyTick(1, hash)).to.be.false;
+    expect(await reefWorld.verifyTick(999, hash)).to.be.false;
   });
 
   it("should return false for wrong hash on verifyTick", async function () {
@@ -44,35 +45,53 @@ describe("ReefWorld", function () {
     expect(await reefWorld.verifyTick(1, hash2)).to.be.false;
   });
 
-  it("should transfer operator and emit event", async function () {
-    await expect(reefWorld.transferOperator(other.address))
+  it("should report tickExists correctly", async function () {
+    expect(await reefWorld.tickExists(1)).to.be.false;
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("state"));
+    await reefWorld.commitTick(1, hash);
+    expect(await reefWorld.tickExists(1)).to.be.true;
+    expect(await reefWorld.tickExists(2)).to.be.false;
+  });
+
+  it("should do two-step operator transfer", async function () {
+    await expect(reefWorld.proposeOperator(pending.address))
+      .to.emit(reefWorld, "OperatorTransferProposed")
+      .withArgs(operator.address, pending.address);
+
+    await expect(reefWorld.connect(pending).acceptOperator())
       .to.emit(reefWorld, "OperatorTransferred")
-      .withArgs(operator.address, other.address);
+      .withArgs(operator.address, pending.address);
 
     // New operator can commit
     const hash = ethers.keccak256(ethers.toUtf8Bytes("state"));
-    await reefWorld.connect(other).commitTick(1, hash);
+    await reefWorld.connect(pending).commitTick(1, hash);
 
     // Old operator cannot
     await expect(reefWorld.commitTick(2, hash)).to.be.revertedWith("ReefWorld: not operator");
   });
 
-  it("should reject transfer to zero address", async function () {
-    await expect(reefWorld.transferOperator(ethers.ZeroAddress)).to.be.revertedWith("ReefWorld: zero address");
+  it("should reject acceptOperator from non-pending address", async function () {
+    await reefWorld.proposeOperator(pending.address);
+    await expect(reefWorld.connect(other).acceptOperator()).to.be.revertedWith("ReefWorld: not pending operator");
+  });
+
+  it("should reject proposeOperator to zero address", async function () {
+    await expect(reefWorld.proposeOperator(ethers.ZeroAddress)).to.be.revertedWith("ReefWorld: zero address");
   });
 });
 
 describe("ReefReputation", function () {
-  let reefRep, operator, agent1, agent2, rando;
+  let reefRep, operator, agent1, agent2, rando, pending;
 
   beforeEach(async function () {
-    [operator, agent1, agent2, rando] = await ethers.getSigners();
+    [operator, agent1, agent2, rando, pending] = await ethers.getSigners();
     const ReefReputation = await ethers.getContractFactory("ReefReputation");
     reefRep = await ReefReputation.deploy();
   });
 
   it("should register agents (operator only)", async function () {
     await reefRep.registerAgent(agent1.address);
+    expect(await reefRep.getAgentCount()).to.equal(1);
     expect(await reefRep.agentCount()).to.equal(1);
   });
 
@@ -106,13 +125,22 @@ describe("ReefReputation", function () {
       .to.be.revertedWith("ReefReputation: agent not registered");
   });
 
-  it("should handle ratings", async function () {
+  it("should handle ratings between registered agents", async function () {
     await reefRep.registerAgent(agent1.address);
+    await reefRep.registerAgent(agent2.address);
+    await reefRep.registerAgent(rando.address);
+
     await reefRep.connect(agent2).rate(agent1.address, 5);
     await reefRep.connect(rando).rate(agent1.address, 3);
 
     // avg = (5+3)/2 * 100 = 400
     expect(await reefRep.getAvgRating(agent1.address)).to.equal(400);
+  });
+
+  it("should reject rating from non-agent", async function () {
+    await reefRep.registerAgent(agent1.address);
+    await expect(reefRep.connect(rando).rate(agent1.address, 5))
+      .to.be.revertedWith("ReefReputation: rater must be registered agent");
   });
 
   it("should reject self-rating", async function () {
@@ -123,18 +151,21 @@ describe("ReefReputation", function () {
 
   it("should reject duplicate rating from same rater", async function () {
     await reefRep.registerAgent(agent1.address);
+    await reefRep.registerAgent(agent2.address);
     await reefRep.connect(agent2).rate(agent1.address, 4);
     await expect(reefRep.connect(agent2).rate(agent1.address, 5))
       .to.be.revertedWith("ReefReputation: already rated this agent");
   });
 
   it("should reject rating for unregistered agent", async function () {
+    await reefRep.registerAgent(agent2.address);
     await expect(reefRep.connect(agent2).rate(agent1.address, 3))
       .to.be.revertedWith("ReefReputation: agent not registered");
   });
 
   it("should reject out-of-range scores", async function () {
     await reefRep.registerAgent(agent1.address);
+    await reefRep.registerAgent(agent2.address);
     await expect(reefRep.connect(agent2).rate(agent1.address, 0))
       .to.be.revertedWith("ReefReputation: score must be 1-5");
     await expect(reefRep.connect(agent2).rate(agent1.address, 6))
@@ -164,5 +195,26 @@ describe("ReefReputation", function () {
   it("should revert getBuildCap for unregistered agent", async function () {
     await expect(reefRep.getBuildCap(agent1.address))
       .to.be.revertedWith("ReefReputation: agent not registered");
+  });
+
+  it("should do two-step operator transfer", async function () {
+    await expect(reefRep.proposeOperator(pending.address))
+      .to.emit(reefRep, "OperatorTransferProposed")
+      .withArgs(operator.address, pending.address);
+
+    await expect(reefRep.connect(pending).acceptOperator())
+      .to.emit(reefRep, "OperatorTransferred")
+      .withArgs(operator.address, pending.address);
+
+    // New operator can register
+    await reefRep.connect(pending).registerAgent(agent1.address);
+
+    // Old operator cannot
+    await expect(reefRep.registerAgent(agent2.address)).to.be.revertedWith("ReefReputation: not operator");
+  });
+
+  it("should reject acceptOperator from non-pending address", async function () {
+    await reefRep.proposeOperator(pending.address);
+    await expect(reefRep.connect(rando).acceptOperator()).to.be.revertedWith("ReefReputation: not pending operator");
   });
 });

@@ -6,10 +6,11 @@ pragma solidity ^0.8.24;
  * @notice On-chain reputation system for Reef agents.
  *         Tracks service transaction counts and ratings.
  *         Access-controlled: only the operator (server) can register agents
- *         and record transactions.
+ *         and record transactions. Only registered agents can rate.
  */
 contract ReefReputation {
     address public operator;
+    address public pendingOperator;
 
     struct AgentRep {
         uint256 totalTransactions;
@@ -26,6 +27,7 @@ contract ReefReputation {
     event AgentRegistered(address indexed agent);
     event TransactionRecorded(address indexed agent, uint256 newTotal);
     event RatingSubmitted(address indexed rater, address indexed agent, uint8 score);
+    event OperatorTransferProposed(address indexed currentOperator, address indexed pendingOperator);
     event OperatorTransferred(address indexed oldOperator, address indexed newOperator);
 
     modifier onlyOperator() {
@@ -66,16 +68,17 @@ contract ReefReputation {
 
     /**
      * @notice Rate an agent after a service interaction.
-     *         Each rater can only rate a given agent once.
+     *         Only registered agents can rate. Each rater can only rate a given agent once.
      * @param agent The agent being rated.
      * @param score Rating from 1 to 5.
      */
     function rate(address agent, uint8 score) external {
+        require(agents[msg.sender].exists, "ReefReputation: rater must be registered agent");
         AgentRep storage rep = agents[agent];
         require(rep.exists, "ReefReputation: agent not registered");
+        require(!hasRated[msg.sender][agent], "ReefReputation: already rated this agent");
         require(score >= 1 && score <= 5, "ReefReputation: score must be 1-5");
         require(msg.sender != agent, "ReefReputation: cannot rate self");
-        require(!hasRated[msg.sender][agent], "ReefReputation: already rated this agent");
 
         hasRated[msg.sender][agent] = true;
         rep.totalRating += score;
@@ -105,12 +108,29 @@ contract ReefReputation {
     }
 
     /**
-     * @notice Transfer operator role.
+     * @notice Get total number of registered agents.
      */
-    function transferOperator(address newOperator) external onlyOperator {
+    function getAgentCount() external view returns (uint256) {
+        return agentCount;
+    }
+
+    /**
+     * @notice Propose a new operator (two-step transfer).
+     */
+    function proposeOperator(address newOperator) external onlyOperator {
         require(newOperator != address(0), "ReefReputation: zero address");
+        pendingOperator = newOperator;
+        emit OperatorTransferProposed(operator, newOperator);
+    }
+
+    /**
+     * @notice Accept the operator role (must be called by pending operator).
+     */
+    function acceptOperator() external {
+        require(msg.sender == pendingOperator, "ReefReputation: not pending operator");
         address old = operator;
-        operator = newOperator;
-        emit OperatorTransferred(old, newOperator);
+        operator = pendingOperator;
+        pendingOperator = address(0);
+        emit OperatorTransferred(old, operator);
     }
 }
