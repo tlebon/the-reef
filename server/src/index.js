@@ -222,7 +222,9 @@ io.on('connection', (socket) => {
         if (completed.length > 0) {
           // Credit quest rewards via payment ledger
           for (const q of completed) {
-            payments.credit(agentId, q.reward, `Quest: ${q.description}`);
+            if (q.reward > 0) {
+              payments.credit(agentId, q.reward, `Quest: ${q.description}`);
+            }
           }
           socket.emit('quest:completed', completed);
         }
