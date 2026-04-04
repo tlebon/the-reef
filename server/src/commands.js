@@ -4,7 +4,7 @@
  */
 
 import crypto from 'crypto';
-import { RESOURCES, ARCHETYPES, MAX_ENERGY, TILE_MINT_COSTS, RARITY_TABLE } from './constants.js';
+import { RESOURCES, ARCHETYPES, MAX_ENERGY, TILE_MINT_COSTS, RARITY_TABLE, SCAVENGE_COST, MAX_DESCRIPTION_LENGTH } from './constants.js';
 import { rollLoot } from './loot.js';
 
 export function cmdLook(world, agent) {
@@ -177,7 +177,6 @@ export function cmdRest(world, agent, resource) {
 }
 
 export function cmdScavenge(world, agent) {
-  const SCAVENGE_COST = 2;
   if (agent.energy < SCAVENGE_COST) return { error: `Not enough energy (need ${SCAVENGE_COST}, have ${agent.energy})` };
 
   const tile = world.getTile(agent.x, agent.y);
@@ -229,7 +228,8 @@ export function cmdRegisterService(world, agent, args) {
   if (agent.services.some(s => s.name === name)) return { error: `You already have a service called '${name}'` };
   const price = parseFloat(args[1]);
   if (!Number.isFinite(price) || price < 0 || price > 1000) return { error: 'Price must be a number between 0 and 1000' };
-  const description = args.slice(2).join(' ');
+  let description = args.slice(2).join(' ');
+  if (description.length > MAX_DESCRIPTION_LENGTH) description = description.slice(0, MAX_DESCRIPTION_LENGTH);
 
   const tile = world.getTile(agent.x, agent.y);
   if (!tile || tile.owner !== agent.id) return { error: 'You must be on a tile you own to register a service' };
@@ -328,7 +328,8 @@ export function cmdPostBounty(world, agent, args) {
   if (agent.energy < 1) return { error: 'Not enough energy' };
 
   const reward = parseFloat(args[0]) || 0.01;
-  const description = args.slice(1).join(' ');
+  let description = args.slice(1).join(' ');
+  if (description.length > MAX_DESCRIPTION_LENGTH) description = description.slice(0, MAX_DESCRIPTION_LENGTH);
 
   agent.energy -= 1;
   const bounty = {

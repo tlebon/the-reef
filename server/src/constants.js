@@ -13,6 +13,8 @@ export const ARCHETYPES = {
 
 export const MAX_ENERGY = 20;
 export const ENERGY_REGEN = 5;
+export const SCAVENGE_COST = 2;
+export const MAX_DESCRIPTION_LENGTH = 200;
 
 export const TILE_MINT_COSTS = {
   coral:   { coral: 3, crystal: 2, kelp: 0, shell: 1 },
