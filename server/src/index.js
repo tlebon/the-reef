@@ -215,17 +215,13 @@ app.post('/api/agent/:walletAddress/claim', verifyWalletAuth, resolveAgentByWall
     }
   }
 
-  // Burn excess on-chain resources (server is contract owner)
+  // Burn excess on-chain resources via tx queue (server is contract owner)
   for (const burn of burns) {
-    try {
-      if (chain.reefResource) {
-        const tx = await chain.reefResource.burnResource(agent.ownerWallet, burn.id, burn.amount);
-        await tx.wait();
-        console.log(`  Chain: burned ${burn.amount} ${burn.name} from ${agent.ownerWallet.slice(0, 10)}...`);
-      }
-    } catch (err) {
-      console.error(`  Chain: failed to burn ${burn.name} — ${err.message}`);
-    }
+    await chain._enqueue(async () => {
+      const tx = await chain.reefResource.burnResource(agent.ownerWallet, burn.id, burn.amount);
+      await tx.wait();
+      console.log(`  Chain: burned ${burn.amount} ${burn.name} from ${agent.ownerWallet.slice(0, 10)}...`);
+    });
   }
 
   if (ids.length === 0 && burns.length === 0) {
@@ -242,8 +238,11 @@ app.post('/api/agent/:walletAddress/claim', verifyWalletAuth, resolveAgentByWall
   try {
     if (chain.reefResource) {
       nonce = Number(await chain.reefResource.claimNonce(agent.ownerWallet));
+      console.log(`  Claim: nonce for ${agent.ownerWallet.slice(0,10)}... = ${nonce}, minting ids=${ids} amounts=${amounts}`);
     }
-  } catch { /* fallback to 0 */ }
+  } catch (err) {
+    console.error(`  Claim: failed to read nonce — ${err.message}`);
+  }
 
   const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour
 
