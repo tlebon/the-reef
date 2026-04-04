@@ -133,7 +133,7 @@ export function cmdBuild(world, agent, symbol) {
 }
 
 export function cmdTrade(world, agent, args) {
-  if (args.length < 4) return { error: 'Usage: TRADE <agentName> <give_resource> <give_amount> <want_resource> <want_amount>' };
+  if (args.length < 5) return { error: 'Usage: TRADE <agentName> <give_resource> <give_amount> <want_resource> <want_amount>' };
 
   const [targetName, giveRes, giveAmtStr, wantRes, wantAmtStr] = args;
   const giveAmt = parseInt(giveAmtStr) || 1;
@@ -171,7 +171,7 @@ export function cmdRest(world, agent, resource) {
   if (!RESOURCES.includes(resource)) return { error: `Unknown resource: ${resource}. Options: ${RESOURCES.join(', ')}` };
   if ((agent.inventory[resource] || 0) < 3) return { error: `Need 3 ${resource} (have ${agent.inventory[resource] || 0})` };
   agent.inventory[resource] -= 3;
-  agent.energy += 8;
+  agent.energy += 8; // Intentionally no cap — REST can push above MAX_ENERGY
   world._log(`${agent.name} rested, consumed 3 ${resource} for energy`);
   return { ok: true, message: `Consumed 3 ${resource} — energy now ${agent.energy}/${MAX_ENERGY}`, energy: agent.energy };
 }

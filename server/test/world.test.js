@@ -90,11 +90,13 @@ describe('World', () => {
 
     it('allows multiple agents on same tile', () => {
       world.addAgent('a2', 'Bob', 'builder');
-      // Both should be able to be on origin
-      const agent1 = world.getAgent('a1');
-      const agent2 = world.getAgent('a2');
-      // Move Alice back to origin area
-      assert.ok(true); // No collision check needed
+      // Move Bob to same tile as Alice (after she moved N)
+      world.execute('a2', 'BUILD #'); // build so Bob has a tile
+      const alice = world.getAgent('a1');
+      const bob = world.getAgent('a2');
+      // No collision — both can exist, just verify no error
+      assert.notEqual(alice, null);
+      assert.notEqual(bob, null);
     });
 
     it('scouts move cheaper', () => {
@@ -293,14 +295,10 @@ describe('World', () => {
       assert.equal(world.getAgent('a2').tradeCount, 1);
     });
 
-    it('rejects if agent too far', () => {
-      world.execute('a1', 'BUILD #');
-      world.execute('a1', 'MOVE N');
-      world.execute('a1', 'MOVE N'); // now 2+ away
-      // Bob is still at origin area
-      const result = world.execute('a1', 'TRADE Bob coral 1 crystal 1');
-      // Might be within range still depending on spawn, just check it runs
-      assert.ok(result.ok || result.error);
+    it('rejects missing args', () => {
+      const result = world.execute('a1', 'TRADE Bob coral 1 crystal');
+      assert.ok(result.error);
+      assert.match(result.error, /Usage/);
     });
   });
 
@@ -324,6 +322,32 @@ describe('World', () => {
     it('rejects invalid score', () => {
       assert.ok(world.execute('a1', 'RATE Bob 0').error);
       assert.ok(world.execute('a1', 'RATE Bob 6').error);
+    });
+  });
+
+  describe('CLAIM_BOUNTY', () => {
+    it('sets forAgentId on claimed bounty', () => {
+      world.addAgent('a1', 'Alice', 'builder');
+      world.bounties.push({
+        id: 'test-bounty', poster: 'System', posterId: 'system',
+        reward: 0.01, description: 'Test', questType: 'scavenge', target: 1,
+        claimed: false, claimedBy: null, completed: false, postedAt: 0,
+      });
+      const result = world.execute('a1', 'CLAIM_BOUNTY test-bounty');
+      assert.ok(result.ok);
+      const bounty = world.bounties.find(b => b.id === 'test-bounty');
+      assert.equal(bounty.forAgentId, 'a1');
+      assert.equal(bounty.claimedById, 'a1');
+    });
+
+    it('rejects claiming own bounty', () => {
+      world.addAgent('a1', 'Alice', 'builder');
+      world.getAgent('a1').energy = 10;
+      world.execute('a1', 'BUILD #');
+      world.execute('a1', 'POST_BOUNTY 0.01 do something');
+      const bounty = world.bounties.find(b => b.poster === 'Alice');
+      const result = world.execute('a1', `CLAIM_BOUNTY ${bounty.id}`);
+      assert.ok(result.error);
     });
   });
 

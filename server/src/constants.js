@@ -13,7 +13,6 @@ export const ARCHETYPES = {
 
 export const MAX_ENERGY = 20;
 export const ENERGY_REGEN = 5;
-export const BASE_BUILD_CAP = 5;
 
 export const TILE_MINT_COSTS = {
   coral:   { coral: 3, crystal: 2, kelp: 0, shell: 1 },
