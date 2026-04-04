@@ -200,27 +200,26 @@ export default function WorldGrid({ tiles, agents, onSelectAgent, onSelectTile, 
           return voidCells;
         })()}
       </svg>
-      <div style={styles.hint}>scroll to zoom · alt+drag to pan · WASD to move</div>
+      <div style={styles.hint}>scroll to zoom · alt+drag to pan · WASD to move · B to build</div>
     </div>
   );
 }
 
 const styles = {
   wrapper: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: '100%',
     position: 'relative',
+    flexShrink: 0,
   },
   hint: {
-    position: 'absolute',
-    top: '8px',
-    left: '50%',
+    position: 'fixed',
+    top: '52px',
+    left: 'calc(50% - 170px)',
     transform: 'translateX(-50%)',
     fontSize: '0.65rem',
     color: '#2d3748',
     pointerEvents: 'none',
+    whiteSpace: 'nowrap',
+    zIndex: 5,
   },
   svg: {
     background: '#060810',

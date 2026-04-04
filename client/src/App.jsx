@@ -391,7 +391,10 @@ const styles = {
   gridContainer: {
     flex: 1,
     overflow: 'auto',
-    padding: '20px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    paddingTop: '40px',
   },
   sidebar: {
     width: '340px',
