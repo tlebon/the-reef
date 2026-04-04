@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import InputModal from './InputModal';
 
 export default function ActionBar({ agent, currentTile, messages, agents, onCommand }) {
   const [showBuild, setShowBuild] = useState(false);
   const [buildSymbol, setBuildSymbol] = useState('#');
+  const [modal, setModal] = useState(null);
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -31,10 +33,104 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
     return () => window.removeEventListener('keydown', handleKey);
   }, [onCommand]);
 
+  const closeModal = () => setModal(null);
+
   if (!agent) return null;
+
+  const renderModal = () => {
+    if (!modal) return null;
+
+    switch (modal.type) {
+      case 'register-service':
+        return (
+          <InputModal
+            title="Register Service"
+            fields={[
+              { key: 'name', label: 'Service name', placeholder: 'e.g. exchange' },
+              { key: 'price', label: 'Price (USDC)', placeholder: '0.01', defaultValue: '0.01' },
+              { key: 'desc', label: 'Description', placeholder: 'A service', defaultValue: 'A service' },
+            ]}
+            onCancel={closeModal}
+            onConfirm={(vals) => {
+              closeModal();
+              if (!vals.name) return;
+              onCommand(`REGISTER_SERVICE ${vals.name} ${vals.price || '0.01'} ${vals.desc || 'A service'}`);
+            }}
+          />
+        );
+
+      case 'say':
+        return (
+          <InputModal
+            title="Say Something"
+            fields={[{ key: 'msg', label: 'Message', placeholder: 'Hello world' }]}
+            onCancel={closeModal}
+            onConfirm={(vals) => {
+              closeModal();
+              if (vals.msg) onCommand(`SAY ${vals.msg}`);
+            }}
+          />
+        );
+
+      case 'post-bounty':
+        return (
+          <InputModal
+            title="Post Bounty"
+            fields={[
+              { key: 'reward', label: 'Reward (USDC)', placeholder: '0.01', defaultValue: '0.01' },
+              { key: 'desc', label: 'Description', placeholder: 'Describe the bounty' },
+            ]}
+            onCancel={closeModal}
+            onConfirm={(vals) => {
+              closeModal();
+              if (vals.desc) onCommand(`POST_BOUNTY ${vals.reward || '0.01'} ${vals.desc}`);
+            }}
+          />
+        );
+
+      case 'invoke-exchange':
+        return (
+          <InputModal
+            title={`Exchange via ${modal.ownerName}`}
+            fields={[
+              { key: 'give', label: 'Give resource', placeholder: 'coral / crystal / kelp / shell' },
+              { key: 'want', label: 'Want resource', placeholder: 'coral / crystal / kelp / shell' },
+            ]}
+            onCancel={closeModal}
+            onConfirm={(vals) => {
+              closeModal();
+              if (vals.give && vals.want) {
+                onCommand(`INVOKE_SERVICE ${modal.ownerName} ${modal.serviceName} ${vals.give} ${vals.want}`);
+              }
+            }}
+          />
+        );
+
+      case 'invoke-combine':
+        return (
+          <InputModal
+            title={`Combine via ${modal.ownerName}`}
+            fields={[
+              { key: 'resource', label: 'Which resource to combine?', placeholder: 'coral / crystal / kelp / shell' },
+            ]}
+            onCancel={closeModal}
+            onConfirm={(vals) => {
+              closeModal();
+              if (vals.resource) {
+                onCommand(`INVOKE_SERVICE ${modal.ownerName} ${modal.serviceName} ${vals.resource}`);
+              }
+            }}
+          />
+        );
+
+      default:
+        return null;
+    }
+  };
 
   return (
     <div style={styles.container}>
+      {renderModal()}
       <div style={styles.status}>
         <span style={styles.name}>{agent.name}</span>
         <span style={styles.energy}>Energy: {agent.energy}{agent.energy > 20 ? ' (boosted)' : '/20'}</span>
@@ -76,22 +172,9 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
                   ))}
                 </div>
               )}
-              <button style={styles.actionBtn} onClick={() => {
-                const name = prompt('Service name:');
-                if (!name) return;
-                const price = prompt('Price (USDC):') || '0.01';
-                const desc = prompt('Description:') || 'A service';
-                onCommand(`REGISTER_SERVICE ${name} ${price} ${desc}`);
-              }}>+ Add service</button>
-              <button style={styles.actionBtn} onClick={() => {
-                const msg = prompt('Say something:');
-                if (msg) onCommand(`SAY ${msg}`);
-              }}>Say</button>
-              <button style={styles.actionBtn} onClick={() => {
-                const reward = prompt('Bounty reward (USDC):') || '0.01';
-                const desc = prompt('Bounty description:');
-                if (desc) onCommand(`POST_BOUNTY ${reward} ${desc}`);
-              }}>Post bounty</button>
+              <button style={styles.actionBtn} onClick={() => setModal({ type: 'register-service' })}>+ Add service</button>
+              <button style={styles.actionBtn} onClick={() => setModal({ type: 'say' })}>Say</button>
+              <button style={styles.actionBtn} onClick={() => setModal({ type: 'post-bounty' })}>Post bounty</button>
               <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
             </>
           ) : currentTile && currentTile.built ? (
@@ -102,16 +185,15 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
                 <div style={styles.serviceList}>
                   {currentTile.services.map((s, i) => (
                     <button key={i} style={styles.actionBtn} onClick={() => {
-                      // Find the owner agent name
                       const ownerName = agents.find(a => a.id === s.agentId)?.name;
                       if (!ownerName) return;
-                      const extraArgs = s.name === 'exchange'
-                        ? (() => { const g = prompt('Give resource (coral/crystal/kelp/shell):'); const w = prompt('Want resource:'); return g && w ? `${g} ${w}` : null; })()
-                        : s.name === 'combine'
-                        ? prompt('Which resource to combine? (coral/crystal/kelp/shell):')
-                        : '';
-                      if (extraArgs === null) return;
-                      onCommand(`INVOKE_SERVICE ${ownerName} ${s.name} ${extraArgs}`.trim());
+                      if (s.name === 'exchange') {
+                        setModal({ type: 'invoke-exchange', ownerName, serviceName: s.name });
+                      } else if (s.name === 'combine') {
+                        setModal({ type: 'invoke-combine', ownerName, serviceName: s.name });
+                      } else {
+                        onCommand(`INVOKE_SERVICE ${ownerName} ${s.name}`);
+                      }
                     }}>
                       {s.name} ({s.price} USDC) — {s.description}
                     </button>
@@ -119,10 +201,7 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
                 </div>
               )}
               <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
-              <button style={styles.actionBtn} onClick={() => {
-                const msg = prompt('Say something:');
-                if (msg) onCommand(`SAY ${msg}`);
-              }}>Say</button>
+              <button style={styles.actionBtn} onClick={() => setModal({ type: 'say' })}>Say</button>
             </>
           ) : currentTile && !currentTile.built ? (
             // On an unbuilt tile

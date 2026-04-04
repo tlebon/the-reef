@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import InputModal from './InputModal';
 
 const MINT_COSTS = {
   coral:   { coral: 3, crystal: 2, kelp: 0, shell: 1 },
@@ -22,12 +23,55 @@ const ARCHETYPE_COLORS = {
 };
 
 export default function TilePanel({ tile, agents, myAgentId, onCommand, onClose, onSelectAgent }) {
+  const [modal, setModal] = useState(null);
   const owner = agents.find(a => a.id === tile.owner);
   const tileAgents = agents.filter(a => a.x === tile.x && a.y === tile.y);
   const tileServices = tile.services || [];
 
+  const closeModal = () => setModal(null);
+
+  const renderModal = () => {
+    if (!modal) return null;
+
+    if (modal.type === 'register-service') {
+      return (
+        <InputModal
+          title="Register Service"
+          fields={[
+            { key: 'name', label: 'Service name', placeholder: 'e.g. exchange' },
+            { key: 'price', label: 'Price (USDC)', placeholder: '0.01', defaultValue: '0.01' },
+            { key: 'desc', label: 'Description', placeholder: 'A service', defaultValue: 'A service' },
+          ]}
+          onCancel={closeModal}
+          onConfirm={(vals) => {
+            closeModal();
+            if (!vals.name) return;
+            onCommand(`REGISTER_SERVICE ${vals.name} ${vals.price || '0.01'} ${vals.desc || 'A service'}`);
+          }}
+        />
+      );
+    }
+
+    if (modal.type === 'say') {
+      return (
+        <InputModal
+          title="Say Something"
+          fields={[{ key: 'msg', label: 'Message', placeholder: 'Hello world' }]}
+          onCancel={closeModal}
+          onConfirm={(vals) => {
+            closeModal();
+            if (vals.msg) onCommand(`SAY ${vals.msg}`);
+          }}
+        />
+      );
+    }
+
+    return null;
+  };
+
   return (
     <div style={styles.container}>
+      {renderModal()}
       <div style={styles.header}>
         <h3 style={styles.title}>Tile ({tile.x}, {tile.y})</h3>
         <button onClick={onClose} style={styles.close}>x</button>
@@ -97,17 +141,8 @@ export default function TilePanel({ tile, agents, myAgentId, onCommand, onClose,
       {tile.built && tile.owner === myAgentId && onCommand && (
         <div style={styles.ownerActions}>
           <h4 style={styles.sectionTitle}>Your tile</h4>
-          <button style={styles.actionBtn} onClick={() => {
-            const name = prompt('Service name:');
-            if (!name) return;
-            const price = prompt('Price (USDC):') || '0.01';
-            const desc = prompt('Description:') || 'A service';
-            onCommand(`REGISTER_SERVICE ${name} ${price} ${desc}`);
-          }}>Register service (2e)</button>
-          <button style={styles.actionBtn} onClick={() => {
-            const msg = prompt('Say something:');
-            if (msg) onCommand(`SAY ${msg}`);
-          }}>Say</button>
+          <button style={styles.actionBtn} onClick={() => setModal({ type: 'register-service' })}>Register service (2e)</button>
+          <button style={styles.actionBtn} onClick={() => setModal({ type: 'say' })}>Say</button>
         </div>
       )}
     </div>
