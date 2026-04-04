@@ -82,11 +82,12 @@ export class ENSManager {
    */
   async registerSubname(agentName, ownerAddress, metadata = {}) {
     const safeName = agentName.toLowerCase();
-    const ensName = `${safeName}.${this.parentName || 'reef.eth'}`;
 
     if (!ENSManager.isValidLabel(safeName)) {
-      return { ensName, onChain: false, error: 'Invalid ENS label — use lowercase letters, numbers, hyphens only' };
+      return { ensName: null, onChain: false, error: 'Invalid ENS label — use lowercase letters, numbers, hyphens only' };
     }
+
+    const ensName = `${safeName}.${this.parentName || 'reef.eth'}`;
 
     if (!this.enabled) {
       return { ensName, onChain: false };
@@ -163,27 +164,6 @@ export class ENSManager {
           console.error(`  ENS: failed to transfer ownership — ${err.message}`);
         }
       }
-    }
-  }
-
-  /**
-   * Update text records for an existing subname.
-   */
-  async updateTextRecords(agentName, records) {
-    if (!this.enabled || !this.resolver) return null;
-
-    try {
-      const subnameNode = ethers.namehash(`${agentName.toLowerCase()}.${this.parentName}`);
-
-      for (const [key, value] of Object.entries(records)) {
-        const tx = await this.resolver.setText(subnameNode, key, String(value));
-        await tx.wait();
-      }
-
-      return { ok: true };
-    } catch (err) {
-      console.error(`  ENS: failed to update records for ${agentName} — ${err.message}`);
-      return null;
     }
   }
 

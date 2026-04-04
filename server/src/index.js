@@ -65,18 +65,6 @@ app.get('/api/bounties', (req, res) => {
   res.json(world.bounties.filter(b => !b.completed));
 });
 
-app.get('/api/config', (req, res) => {
-  res.json({
-    ensRegistry: process.env.ENS_REGISTRY_ADDRESS || null,
-    ensResolver: process.env.ENS_RESOLVER_ADDRESS || null,
-    ensParentName: process.env.ENS_PARENT_NAME || null,
-    operatorAddress: process.env.DEPLOYER_PRIVATE_KEY
-      ? new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY).address
-      : null,
-    chainId: 11155111, // Sepolia
-  });
-});
-
 app.get('/api/archetypes', (req, res) => {
   res.json({
     builder:  { affinity: 'coral',   description: 'Efficient construction, structural bonuses' },
