@@ -8,6 +8,8 @@ import BountyPanel from './BountyPanel.jsx';
 import JoinPanel from './JoinPanel.jsx';
 import Welcome from './Welcome.jsx';
 import ActionBar from './ActionBar.jsx';
+import { useWallet } from './useWallet.js';
+import KeyModal from './KeyModal.jsx';
 
 const SOCKET_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3001'
@@ -25,6 +27,8 @@ export default function App() {
   const [latestBlock, setLatestBlock] = useState(null);
   const [joining, setJoining] = useState(false);
   const [completedQuest, setCompletedQuest] = useState(null);
+  const { wallet, connecting, error: walletError, connectMetaMask, createWallet, disconnect } = useWallet();
+  const [newWalletKey, setNewWalletKey] = useState(null);
 
   useEffect(() => {
     const s = io(SOCKET_URL);
@@ -97,7 +101,13 @@ export default function App() {
     if (!socket) return;
     setJoining(true);
     addActivity(`Joining as ${name} (${archetype})...`);
-    socket.emit('agent:register', { name, archetype });
+    socket.emit('agent:register', {
+      name,
+      archetype,
+      walletAddress: wallet?.address || null,
+      signature: wallet?.signature || null,
+      message: wallet?.message || null,
+    });
   };
 
   const handleCommand = (command) => {
@@ -115,7 +125,35 @@ export default function App() {
   }
 
   if (showWelcome && !myAgentId) {
-    return <Welcome onEnter={() => { setShowWelcome(false); setShowJoin(true); }} />;
+    return <Welcome
+      onEnter={() => { setShowWelcome(false); setShowJoin(true); }}
+      wallet={wallet}
+      onConnectMetaMask={async () => {
+        const w = await connectMetaMask();
+        if (w) addActivity(`Wallet connected: ${w.address.slice(0, 10)}...`);
+      }}
+      onCreateWallet={async () => {
+        try {
+          const w = await createWallet();
+          addActivity(`New wallet created: ${w.address.slice(0, 10)}...`);
+          if (w.privateKey) {
+            setNewWalletKey(w);
+          }
+        } catch (err) {
+          addActivity(`Error creating wallet: ${err.message}`);
+        }
+      }}
+      connecting={connecting}
+      walletError={walletError}
+    />;
+  }
+
+  if (newWalletKey) {
+    return <KeyModal
+      privateKey={newWalletKey.privateKey}
+      address={newWalletKey.address}
+      onConfirm={() => { setNewWalletKey(null); setShowJoin(true); }}
+    />;
   }
 
   const agents = Object.values(worldState.agents || {});
@@ -136,7 +174,11 @@ export default function App() {
           <button style={styles.joinBtn} onClick={() => setShowJoin(true)}>Join The Reef</button>
         )}
         {myAgentId && (
-          <span style={styles.myAgent}>You: {worldState.agents[myAgentId]?.name || myAgentId}</span>
+          <span style={styles.myAgent}>
+            {worldState.agents[myAgentId]?.name || myAgentId}
+            {wallet && <span style={styles.walletBadge}>{wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}</span>}
+            <button style={styles.logoutBtn} onClick={() => { disconnect(); setMyAgentId(null); setShowWelcome(true); setShowJoin(false); }}>logout</button>
+          </span>
         )}
       </header>
 
@@ -345,6 +387,23 @@ const styles = {
   myAgent: {
     color: '#00d4aa',
     fontSize: '0.85rem',
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+  },
+  walletBadge: {
+    color: '#5f6d7e',
+    fontSize: '0.7rem',
+    fontFamily: 'monospace',
+  },
+  logoutBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#3d4a5c',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontSize: '0.7rem',
+    padding: '2px 4px',
   },
   modal: {
     position: 'fixed',

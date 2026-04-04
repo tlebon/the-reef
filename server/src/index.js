@@ -6,6 +6,7 @@
  */
 
 import crypto from 'crypto';
+import { ethers } from 'ethers';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -79,12 +80,68 @@ io.on('connection', (socket) => {
   socket.emit('world:state', world.getState());
 
   // Agent registration
-  socket.on('agent:register', async ({ name, archetype, walletAddress }) => {
+  socket.on('agent:register', async ({ name, archetype, walletAddress, signature, message, delegateWallet }) => {
+    // Validate wallet address format first
+    if (walletAddress && !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      socket.emit('agent:error', { error: 'Invalid wallet address' });
+      return;
+    }
+
+    // Verify wallet ownership via signature — required when wallet is provided
+    if (walletAddress) {
+      if (!signature || !message) {
+        socket.emit('agent:error', { error: 'Wallet signature required — please reconnect your wallet' });
+        return;
+      }
+
+      // Validate timestamp — require it and reject if older than 5 minutes
+      const tsMatch = message.match(/Timestamp: (\d+)/);
+      if (!tsMatch) {
+        socket.emit('agent:error', { error: 'Invalid signature message — missing timestamp' });
+        return;
+      }
+      const sigAge = Date.now() - parseInt(tsMatch[1]);
+      if (sigAge > 5 * 60 * 1000) {
+        socket.emit('agent:error', { error: 'Signature expired — please sign again' });
+        return;
+      }
+
+      try {
+        const recovered = ethers.verifyMessage(message, signature);
+        if (recovered.toLowerCase() !== walletAddress.toLowerCase()) {
+          socket.emit('agent:error', { error: 'Wallet signature verification failed' });
+          return;
+        }
+      } catch {
+        socket.emit('agent:error', { error: 'Invalid signature' });
+        return;
+      }
+    }
+    if (delegateWallet && !/^0x[a-fA-F0-9]{40}$/.test(delegateWallet)) {
+      socket.emit('agent:error', { error: 'Invalid delegate wallet address' });
+      return;
+    }
+
+    // Check if wallet already has an agent
+    if (walletAddress) {
+      const existing = world.getAgentByWallet(walletAddress);
+      if (existing) {
+        // Reconnect to existing agent — don't broadcast, they're already in the world
+        socket.agentId = existing.id;
+        socket.emit('agent:registered', { agent: existing, tile: world.getTile(existing.x, existing.y) });
+        return;
+      }
+    }
+
     const id = `agent-${crypto.randomUUID()}`;
-    const result = world.addAgent(id, name, archetype);
+    const result = world.addAgent(id, name, archetype, {
+      ownerWallet: walletAddress || null,
+      delegateWallet: delegateWallet || null,
+    });
     if (result.error) {
       socket.emit('agent:error', result);
     } else {
+      socket.agentId = result.agent.id;
       socket.emit('agent:registered', result);
       io.emit('world:agent_joined', { agent: result.agent, tile: result.tile });
 
@@ -102,6 +159,20 @@ io.on('connection', (socket) => {
         await chain.registerAgent(walletAddress);
       }
     }
+  });
+
+  // Link delegate wallet to existing agent — only the socket that registered this agent can link
+  socket.on('agent:link_delegate', ({ agentId, delegateWallet }) => {
+    if (socket.agentId !== agentId) {
+      socket.emit('agent:link_result', { error: 'Not authorized — you can only link delegates to your own agent' });
+      return;
+    }
+    if (delegateWallet && !/^0x[a-fA-F0-9]{40}$/.test(delegateWallet)) {
+      socket.emit('agent:link_result', { error: 'Invalid delegate wallet address' });
+      return;
+    }
+    const result = world.linkDelegate(agentId, delegateWallet);
+    socket.emit('agent:link_result', result);
   });
 
   // Agent command
