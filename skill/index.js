@@ -32,7 +32,19 @@ function authHeaders() {
   return headers;
 }
 
+function validateWallet(wallet) {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+    throw new Error(`Invalid wallet address: ${wallet}`);
+  }
+}
+
+// Strip control characters and newlines from free-text inputs
+function sanitizeText(value) {
+  return (value || '').replace(/[\x00-\x1f\x7f]/g, '').trim();
+}
+
 async function agentState(wallet) {
+  validateWallet(wallet);
   try {
     const res = await fetch(`${BASE_URL}/api/agent/${wallet}/state`, { headers: authHeaders() });
     if (!res.ok) return { error: `HTTP ${res.status}: ${await res.text()}` };
@@ -43,6 +55,7 @@ async function agentState(wallet) {
 }
 
 async function agentAction(wallet, command) {
+  validateWallet(wallet);
   try {
     const res = await fetch(`${BASE_URL}/api/agent/${wallet}/action`, {
       method: 'POST',
@@ -130,7 +143,7 @@ export const tools = [
       required: ['wallet', 'message'],
     },
     async execute({ wallet, message }) {
-      return agentAction(wallet, `SAY ${message}`);
+      return agentAction(wallet, `SAY ${sanitizeText(message)}`);
     },
   },
   {
@@ -186,7 +199,7 @@ export const tools = [
     },
     async execute({ wallet, name, price, description }) {
       const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '');
-      return agentAction(wallet, `REGISTER_SERVICE ${safeName} ${price} ${description}`);
+      return agentAction(wallet, `REGISTER_SERVICE ${safeName} ${price} ${sanitizeText(description)}`);
     },
   },
   {
@@ -206,7 +219,7 @@ export const tools = [
       const safeAgentName = agent_name.replace(/[^a-zA-Z0-9_-]/g, '');
       const safeServiceName = service_name.replace(/[^a-zA-Z0-9_-]/g, '');
       const cmd = args
-        ? `INVOKE_SERVICE ${safeAgentName} ${safeServiceName} ${args}`
+        ? `INVOKE_SERVICE ${safeAgentName} ${safeServiceName} ${sanitizeText(args)}`
         : `INVOKE_SERVICE ${safeAgentName} ${safeServiceName}`;
       return agentAction(wallet, cmd);
     },
@@ -224,7 +237,7 @@ export const tools = [
       required: ['wallet', 'reward', 'description'],
     },
     async execute({ wallet, reward, description }) {
-      return agentAction(wallet, `POST_BOUNTY ${reward} ${description}`);
+      return agentAction(wallet, `POST_BOUNTY ${reward} ${sanitizeText(description)}`);
     },
   },
   {
