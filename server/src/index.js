@@ -72,6 +72,58 @@ app.get('/api/bounties', (req, res) => {
   res.json(world.bounties.filter(b => !b.completed));
 });
 
+// ── x402 Paid Service Endpoints ──────────────────────────────────────
+
+// List available paid services
+app.get('/api/services', (req, res) => {
+  const services = [];
+  for (const agent of world.agents.values()) {
+    for (const s of agent.services) {
+      services.push({
+        agent: agent.name,
+        agentId: agent.id,
+        ensName: agent.ensName,
+        ...s,
+      });
+    }
+  }
+  res.json(services);
+});
+
+// Invoke a paid service via x402
+app.get('/api/services/:agentName/:serviceName',
+  // x402 middleware — returns 402 if unpaid
+  (req, res, next) => {
+    const agent = [...world.agents.values()].find(a => a.name === req.params.agentName);
+    const service = agent?.services.find(s => s.name === req.params.serviceName);
+    if (!service) return res.status(404).json({ error: 'Service not found' });
+
+    const middleware = payments.requirePayment(service.price);
+    if (middleware) {
+      return middleware(req, res, next);
+    }
+    next(); // No Circle config — skip payment
+  },
+  (req, res) => {
+    const agent = [...world.agents.values()].find(a => a.name === req.params.agentName);
+    const service = agent?.services.find(s => s.name === req.params.serviceName);
+    if (!agent || !service) return res.status(404).json({ error: 'Service not found' });
+
+    // Execute NPC service logic
+    const args = Object.values(req.query);
+    const result = world.execute(agent.id, `INVOKE_SERVICE ${agent.name} ${service.name} ${args.join(' ')}`);
+
+    res.json({
+      service: service.name,
+      agent: agent.name,
+      price: service.price,
+      paid: !!payments.enabled,
+      payment: req.payment || null,
+      result,
+    });
+  }
+);
+
 app.get('/api/archetypes', (req, res) => {
   res.json({
     builder:  { affinity: 'coral',   description: 'Efficient construction, structural bonuses' },
