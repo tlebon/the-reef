@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Welcome({ onEnter }) {
+export default function Welcome({ onEnter, wallet, onConnectMetaMask, onCreateWallet, connecting }) {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
@@ -36,9 +36,29 @@ export default function Welcome({ onEnter }) {
           </div>
         </div>
 
-        <button style={styles.enterBtn} onClick={onEnter}>
-          Enter The Reef
-        </button>
+        {wallet ? (
+          <div style={styles.walletInfo}>
+            <div style={styles.connectedLabel}>Wallet connected</div>
+            <div style={styles.address}>{wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}</div>
+            <button style={styles.enterBtn} onClick={onEnter}>Enter The Reef</button>
+          </div>
+        ) : (
+          <div style={styles.walletOptions}>
+            <button
+              style={styles.enterBtn}
+              onClick={onConnectMetaMask}
+              disabled={connecting}
+            >
+              {connecting ? 'Connecting...' : 'Connect Wallet'}
+            </button>
+            <button style={styles.secondaryBtn} onClick={onCreateWallet}>
+              Create New Wallet
+            </button>
+            <button style={styles.skipBtn} onClick={onEnter}>
+              Play without wallet
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -101,6 +121,29 @@ const styles = {
     fontSize: '0.8rem',
     margin: '2px 0 0 0',
   },
+  walletOptions: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+  walletInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  connectedLabel: {
+    fontSize: '0.75rem',
+    color: '#00d4aa',
+    textTransform: 'uppercase',
+    letterSpacing: '1px',
+  },
+  address: {
+    fontSize: '0.85rem',
+    color: '#5f6d7e',
+    fontFamily: 'monospace',
+    marginBottom: '8px',
+  },
   enterBtn: {
     background: '#00d4aa',
     color: '#0a0e17',
@@ -112,5 +155,27 @@ const styles = {
     fontFamily: 'inherit',
     fontSize: '1rem',
     letterSpacing: '0.5px',
+    width: '100%',
+  },
+  secondaryBtn: {
+    background: '#1a2035',
+    color: '#c8d6e5',
+    border: '1px solid #2d3748',
+    padding: '12px 40px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    fontSize: '0.9rem',
+    width: '100%',
+  },
+  skipBtn: {
+    background: 'none',
+    color: '#3d4a5c',
+    border: 'none',
+    padding: '8px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontSize: '0.8rem',
   },
 };

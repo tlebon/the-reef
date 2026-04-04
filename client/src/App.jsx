@@ -8,6 +8,7 @@ import BountyPanel from './BountyPanel.jsx';
 import JoinPanel from './JoinPanel.jsx';
 import Welcome from './Welcome.jsx';
 import ActionBar from './ActionBar.jsx';
+import { useWallet } from './useWallet.js';
 
 const SOCKET_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3001'
@@ -25,6 +26,7 @@ export default function App() {
   const [latestBlock, setLatestBlock] = useState(null);
   const [joining, setJoining] = useState(false);
   const [completedQuest, setCompletedQuest] = useState(null);
+  const { wallet, connecting, connectMetaMask, createWallet, disconnect } = useWallet();
 
   useEffect(() => {
     const s = io(SOCKET_URL);
@@ -97,7 +99,11 @@ export default function App() {
     if (!socket) return;
     setJoining(true);
     addActivity(`Joining as ${name} (${archetype})...`);
-    socket.emit('agent:register', { name, archetype });
+    socket.emit('agent:register', {
+      name,
+      archetype,
+      walletAddress: wallet?.address || null,
+    });
   };
 
   const handleCommand = (command) => {
@@ -115,7 +121,19 @@ export default function App() {
   }
 
   if (showWelcome && !myAgentId) {
-    return <Welcome onEnter={() => { setShowWelcome(false); setShowJoin(true); }} />;
+    return <Welcome
+      onEnter={() => { setShowWelcome(false); setShowJoin(true); }}
+      wallet={wallet}
+      onConnectMetaMask={async () => {
+        const w = await connectMetaMask();
+        if (w) addActivity(`Wallet connected: ${w.address.slice(0, 10)}...`);
+      }}
+      onCreateWallet={() => {
+        const w = createWallet();
+        addActivity(`New wallet created: ${w.address.slice(0, 10)}...`);
+      }}
+      connecting={connecting}
+    />;
   }
 
   const agents = Object.values(worldState.agents || {});
@@ -136,7 +154,10 @@ export default function App() {
           <button style={styles.joinBtn} onClick={() => setShowJoin(true)}>Join The Reef</button>
         )}
         {myAgentId && (
-          <span style={styles.myAgent}>You: {worldState.agents[myAgentId]?.name || myAgentId}</span>
+          <span style={styles.myAgent}>
+            {worldState.agents[myAgentId]?.name || myAgentId}
+            {wallet && <span style={styles.walletBadge}>{wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}</span>}
+          </span>
         )}
       </header>
 
@@ -345,6 +366,14 @@ const styles = {
   myAgent: {
     color: '#00d4aa',
     fontSize: '0.85rem',
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+  },
+  walletBadge: {
+    color: '#3d4a5c',
+    fontSize: '0.7rem',
+    fontFamily: 'monospace',
   },
   modal: {
     position: 'fixed',

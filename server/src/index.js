@@ -79,9 +79,22 @@ io.on('connection', (socket) => {
   socket.emit('world:state', world.getState());
 
   // Agent registration
-  socket.on('agent:register', async ({ name, archetype, walletAddress }) => {
+  socket.on('agent:register', async ({ name, archetype, walletAddress, delegateWallet }) => {
+    // Check if wallet already has an agent
+    if (walletAddress) {
+      const existing = world.getAgentByWallet(walletAddress);
+      if (existing) {
+        // Reconnect to existing agent
+        socket.emit('agent:registered', { agent: existing, tile: world.getTile(existing.x, existing.y) });
+        return;
+      }
+    }
+
     const id = `agent-${crypto.randomUUID()}`;
-    const result = world.addAgent(id, name, archetype);
+    const result = world.addAgent(id, name, archetype, {
+      ownerWallet: walletAddress || null,
+      delegateWallet: delegateWallet || null,
+    });
     if (result.error) {
       socket.emit('agent:error', result);
     } else {
@@ -102,6 +115,12 @@ io.on('connection', (socket) => {
         await chain.registerAgent(walletAddress);
       }
     }
+  });
+
+  // Link delegate wallet to existing agent
+  socket.on('agent:link_delegate', ({ agentId, delegateWallet }) => {
+    const result = world.linkDelegate(agentId, delegateWallet);
+    socket.emit('agent:link_result', result);
   });
 
   // Agent command

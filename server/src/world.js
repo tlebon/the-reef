@@ -79,7 +79,7 @@ export class World {
 
   // ── Agents ─────────────────────────────────────────────────────────
 
-  addAgent(id, name, archetype) {
+  addAgent(id, name, archetype, { ownerWallet, delegateWallet } = {}) {
     if (!ARCHETYPES[archetype]) {
       return { error: `Unknown archetype: ${archetype}. Choose: ${Object.keys(ARCHETYPES).join(', ')}` };
     }
@@ -106,6 +106,8 @@ export class World {
       inventory: {},
       tilesOwned: 0,
       services: [],
+      ownerWallet: ownerWallet || null,
+      delegateWallet: delegateWallet || null,
     };
 
     this.agents.set(id, agent);
@@ -115,6 +117,25 @@ export class World {
 
   getAgent(id) {
     return this.agents.get(id) || null;
+  }
+
+  linkDelegate(agentId, delegateWallet) {
+    const agent = this.agents.get(agentId);
+    if (!agent) return { error: 'Unknown agent' };
+    agent.delegateWallet = delegateWallet;
+    this._log(`${agent.name} linked delegate wallet ${delegateWallet.slice(0, 10)}...`);
+    return { ok: true, message: `Linked delegate wallet` };
+  }
+
+  getAgentByWallet(walletAddress) {
+    if (!walletAddress) return null;
+    const addr = walletAddress.toLowerCase();
+    for (const agent of this.agents.values()) {
+      if (agent.ownerWallet?.toLowerCase() === addr || agent.delegateWallet?.toLowerCase() === addr) {
+        return agent;
+      }
+    }
+    return null;
   }
 
   _avgRating(agent) {
