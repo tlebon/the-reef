@@ -67,13 +67,6 @@ export const MODAL_CONFIGS = {
     ],
     toCommand: (v) => (v.give && v.want) ? `INVOKE_SERVICE ${ownerName} exchange ${v.give} ${v.want} ${v.giveAmount || 1}` : null,
   }),
-  'link-delegate': {
-    title: 'Link AI Agent',
-    fields: [
-      { key: 'delegateWallet', label: 'Delegate Wallet Address', placeholder: '0x...' },
-    ],
-    toCommand: (v) => v.delegateWallet ? `LINK_DELEGATE ${v.delegateWallet}` : null,
-  },
   'combine': (ownerName) => ({
     title: `Combine with ${ownerName}`,
     fields: [

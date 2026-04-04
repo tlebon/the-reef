@@ -215,7 +215,32 @@ app.post('/api/agent/:walletAddress/claim', verifyWalletAuth, resolveAgentByWall
     }
   }
 
-  // Burn excess on-chain resources via tx queue (server is contract owner)
+  if (ids.length === 0 && burns.length === 0) {
+    return res.status(400).json({ error: 'On-chain balances already match (nothing to sync)' });
+  }
+
+  // Read nonce from contract to prevent replay
+  let nonce = 0;
+  try {
+    if (chain.reefResource) {
+      nonce = Number(await chain.reefResource.claimNonce(agent.ownerWallet));
+      console.log(`  Claim: nonce for ${agent.ownerWallet.slice(0,10)}... = ${nonce}, minting ids=${ids} amounts=${amounts}, burns=${burns.length}`);
+    }
+  } catch (err) {
+    console.error(`  Claim: failed to read nonce — ${err.message}`);
+  }
+
+  // Sign the claim first — only burn after signing succeeds
+  const deadline = Math.floor(Date.now() / 1000) + 3600;
+  let claim = null;
+  if (ids.length > 0) {
+    claim = await chain.signResourceClaim(agent.ownerWallet, ids, amounts, nonce, deadline);
+    if (!claim) {
+      return res.status(503).json({ error: 'Chain signing unavailable — running in local mode' });
+    }
+  }
+
+  // Now burn excess on-chain resources (safe — signing succeeded or no mints needed)
   for (const burn of burns) {
     await chain._enqueue(async () => {
       const tx = await chain.reefResource.burnResource(agent.ownerWallet, burn.id, burn.amount);
@@ -224,39 +249,19 @@ app.post('/api/agent/:walletAddress/claim', verifyWalletAuth, resolveAgentByWall
     });
   }
 
-  if (ids.length === 0 && burns.length === 0) {
-    return res.status(400).json({ error: 'On-chain balances already match (nothing to sync)' });
-  }
-
-  // If only burns (no new resources to mint), return early
-  if (ids.length === 0) {
+  // If only burns, return early
+  if (!claim) {
     return res.json({ ok: true, burns, message: 'Burned excess on-chain resources to match in-game state' });
   }
 
-  // Read nonce from contract to prevent replay
-  let nonce = 0;
-  try {
-    if (chain.reefResource) {
-      nonce = Number(await chain.reefResource.claimNonce(agent.ownerWallet));
-      console.log(`  Claim: nonce for ${agent.ownerWallet.slice(0,10)}... = ${nonce}, minting ids=${ids} amounts=${amounts}`);
-    }
-  } catch (err) {
-    console.error(`  Claim: failed to read nonce — ${err.message}`);
-  }
-
-  const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour
-
-  const claim = await chain.signResourceClaim(agent.ownerWallet, ids, amounts, nonce, deadline);
-  if (!claim) {
-    return res.status(503).json({ error: 'Chain signing unavailable — running in local mode' });
-  }
-
+  const nameById = { 0: 'coral', 1: 'crystal', 2: 'kelp', 3: 'shell' };
   res.json({
     ...claim,
     ids,
     amounts,
     deadline,
-    resources: Object.fromEntries(ids.map((id, i) => [Object.keys(resourceMap)[id], amounts[i]])),
+    burns: burns.length > 0 ? burns : undefined,
+    resources: Object.fromEntries(ids.map((id, i) => [nameById[id], amounts[i]])),
     contractAddress: process.env.REEF_RESOURCE_ADDRESS || null,
   });
 });

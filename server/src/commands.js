@@ -145,7 +145,10 @@ export function cmdTrade(world, agent, args) {
   if (!target) return { error: `Agent '${targetName}' not found` };
 
   const dist = Math.abs(target.x - agent.x) + Math.abs(target.y - agent.y);
-  if (dist > 2) return { error: `${targetName} is too far away (distance: ${dist})` };
+  if (dist > 0) return { error: `${targetName} must be on the same tile` };
+
+  if (!RESOURCES.includes(giveRes)) return { error: `Unknown resource: ${giveRes}. Options: ${RESOURCES.join(', ')}` };
+  if (!RESOURCES.includes(wantRes)) return { error: `Unknown resource: ${wantRes}. Options: ${RESOURCES.join(', ')}` };
 
   if ((agent.inventory[giveRes] || 0) < giveAmt) return { error: `You don't have ${giveAmt} ${giveRes}` };
   if ((target.inventory[wantRes] || 0) < wantAmt) return { error: `${targetName} doesn't have ${wantAmt} ${wantRes}` };
