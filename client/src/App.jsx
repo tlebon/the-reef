@@ -287,6 +287,29 @@ export default function App() {
         </div>
 
         <div style={styles.sidebar}>
+          {myAgentId && worldState.agents[myAgentId] && (
+            <div style={styles.panel}>
+              <h3 style={styles.panelTitle}>Your Agent</h3>
+              <div style={{ fontSize: '0.85rem', color: '#c8d6e5', marginBottom: '4px' }}>
+                {worldState.agents[myAgentId].name}
+                {worldState.agents[myAgentId].ensName && (
+                  <span style={{ color: '#5f6d7e', marginLeft: '6px' }}>{worldState.agents[myAgentId].ensName}</span>
+                )}
+              </div>
+              {wallet?.address && (
+                <div style={{ fontSize: '0.7rem', color: '#3d4a5c', marginBottom: '8px' }}>{wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}</div>
+              )}
+              {worldState.agents[myAgentId].delegateWallet ? (
+                <div style={{ fontSize: '0.75rem', color: '#00d4aa' }}>AI linked: {worldState.agents[myAgentId].delegateWallet.slice(0, 6)}...{worldState.agents[myAgentId].delegateWallet.slice(-4)}</div>
+              ) : (
+                <button style={{ padding: '6px 12px', background: '#1a2035', color: '#c8d6e5', border: '1px solid #2d3748', borderRadius: '3px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.75rem', width: '100%' }} onClick={() => {
+                  const addr = prompt('Enter delegate wallet address:');
+                  if (addr) handleCommand(`LINK_DELEGATE ${addr}`);
+                }}>Link AI Agent</button>
+              )}
+            </div>
+          )}
+
           {showJoin && !myAgentId && (
             <JoinPanel onJoin={handleJoin} onCancel={() => setShowJoin(false)} />
           )}
