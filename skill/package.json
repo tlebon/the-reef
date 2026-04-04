@@ -1,0 +1,9 @@
+{
+  "name": "@the-reef/skill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenClaw skill tools for The Reef — lets AI agents interact with the game world",
+  "main": "index.js",
+  "dependencies": {}
+}

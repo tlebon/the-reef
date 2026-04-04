@@ -138,6 +138,151 @@ app.get('/api/archetypes', (req, res) => {
   });
 });
 
+// ── Agent Automation REST API ───────────────────────────────────────
+
+// Middleware: verify wallet signature for REST API calls.
+// Expects header: x-wallet-signature: <sig>  and  x-wallet-message: <msg>
+// The message must contain the wallet address and a recent timestamp.
+function verifyWalletAuth(req, res, next) {
+  const walletAddress = req.params.walletAddress;
+  const signature = req.headers['x-wallet-signature'];
+  const message = req.headers['x-wallet-message'];
+
+  if (!signature || !message) {
+    return res.status(401).json({ error: 'Missing x-wallet-signature and x-wallet-message headers' });
+  }
+
+  // Verify the signature recovers to the claimed wallet
+  try {
+    const recovered = ethers.verifyMessage(message, signature);
+    if (recovered.toLowerCase() !== walletAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Signature does not match wallet address' });
+    }
+  } catch (err) {
+    return res.status(403).json({ error: 'Invalid signature' });
+  }
+
+  // Require and verify timestamp freshness (15 minute window)
+  const tsMatch = message.match(/Timestamp: (\d+)/);
+  if (!tsMatch) {
+    return res.status(403).json({ error: 'Invalid signature message — missing timestamp' });
+  }
+  const sigAge = Date.now() - parseInt(tsMatch[1]);
+  if (sigAge < 0 || sigAge > 15 * 60 * 1000) {
+    return res.status(403).json({ error: 'Signature timestamp invalid' });
+  }
+
+  next();
+}
+
+// Middleware: resolve agent by walletAddress param
+function resolveAgentByWallet(req, res, next) {
+  const agent = world.getAgentByWallet(req.params.walletAddress);
+  if (!agent) return res.status(404).json({ error: 'No agent found for this wallet address' });
+  req.agent = agent;
+  next();
+}
+
+// GET /api/agent/:walletAddress/state — full agent state including surroundings
+app.get('/api/agent/:walletAddress/state', verifyWalletAuth, resolveAgentByWallet, (req, res) => {
+  const lookResult = world.execute(req.agent.id, 'LOOK');
+  res.json(lookResult);
+});
+
+// POST /api/agent/:walletAddress/action — submit a command
+const ALLOWED_REST_COMMANDS = new Set([
+  'LOOK', 'MOVE', 'BUILD', 'SCAVENGE', 'REST', 'TRADE', 'SAY',
+  'REGISTER_SERVICE', 'REMOVE_SERVICE', 'INVOKE_SERVICE',
+  'POST_BOUNTY', 'CLAIM_BOUNTY', 'RATE',
+]);
+
+/**
+ * Execute a command with full side effects (payment, NFT minting, quests).
+ * Shared by both WebSocket and REST paths.
+ * Returns { result, completed } where completed is any quest completions.
+ */
+async function executeWithSideEffects(agentId, command) {
+  const parts = command.trim().split(/\s+/);
+  const verb = parts[0]?.toUpperCase();
+
+  // Paid service invocations: deduct → execute → refund on failure
+  if (verb === 'INVOKE_SERVICE' && parts.length >= 3) {
+    const targetName = parts[1];
+    const serviceName = parts[2];
+    const target = [...world.agents.values()].find(a => a.name === targetName);
+    const service = target?.services.find(s => s.name === serviceName);
+
+    if (service && service.price > 0) {
+      const payResult = await payments.processPayment(agentId, target.id, service.price, serviceName);
+      saveWorldState(world);
+      if (payResult.error) return { result: { error: payResult.error } };
+
+      const result = world.execute(agentId, command);
+      if (!result.ok) {
+        payments.credit(agentId, service.price, `Refund: ${serviceName} failed`);
+        return { result };
+      }
+      result.payment = payResult;
+
+      const agent = world.getAgent(agentId);
+      const completed = agent ? checkQuests(world, agent) : [];
+      for (const q of completed) {
+        if (q.reward > 0) payments.credit(agentId, q.reward, `Quest: ${q.description}`);
+      }
+      return { result, completed };
+    }
+  }
+
+  // All other commands
+  const result = world.execute(agentId, command);
+
+  if (result.ok) {
+    // Mint tile NFT on successful build
+    if (result.isHome !== undefined) {
+      const agent = world.getAgent(agentId);
+      if (agent?.ownerWallet) {
+        const tile = world.getTile(agent.x, agent.y);
+        if (tile) {
+          const resourceMap = { coral: 0, crystal: 1, kelp: 2, shell: 3 };
+          chain.mintTileNFT(agent.ownerWallet, tile.x, tile.y, resourceMap[tile.resource] ?? 0, tile.symbol).catch(() => {});
+        }
+      }
+    }
+
+    // Check quest completion
+    const agent = world.getAgent(agentId);
+    const completed = agent ? checkQuests(world, agent) : [];
+    for (const q of completed) {
+      if (q.reward > 0) payments.credit(agentId, q.reward, `Quest: ${q.description}`);
+    }
+    return { result, completed };
+  }
+
+  return { result };
+}
+
+app.post('/api/agent/:walletAddress/action', verifyWalletAuth, resolveAgentByWallet, async (req, res) => {
+  const { command } = req.body;
+  if (!command || typeof command !== 'string') {
+    return res.status(400).json({ error: 'Missing "command" in request body' });
+  }
+
+  const verb = command.split(' ')[0].toUpperCase();
+  if (!ALLOWED_REST_COMMANDS.has(verb)) {
+    return res.status(400).json({ error: `Unknown command: ${verb}` });
+  }
+
+  try {
+    const { result, completed } = await executeWithSideEffects(req.agent.id, command);
+    if (result.ok) {
+      io.emit('world:update', world.getState());
+    }
+    res.json({ ...result, quests: completed?.length ? completed : undefined });
+  } catch (err) {
+    res.status(500).json({ error: `Command failed: ${err.message}` });
+  }
+});
+
 // ── WebSocket ────────────────────────────────────────────────────────
 
 io.on('connection', (socket) => {
@@ -317,90 +462,13 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // For paid service invocations: check balance → execute → deduct
-    const parts = command.trim().split(/\s+/);
-    if (parts[0]?.toUpperCase() === 'INVOKE_SERVICE' && parts.length >= 3) {
-      const targetName = parts[1];
-      const serviceName = parts[2];
-      const target = [...world.agents.values()].find(a => a.name === targetName);
-      const service = target?.services.find(s => s.name === serviceName);
-
-      if (service && service.price > 0) {
-        // Step 1: Deduct payment first (atomic with balance check)
-        let payResult;
-        try {
-          payResult = await payments.processPayment(agentId, target.id, service.price, serviceName);
-          // Persist balance change immediately (don't wait for tick)
-          saveWorldState(world);
-          if (payResult.error) {
-            socket.emit('agent:result', { command, result: { error: payResult.error } });
-            return;
-          }
-        } catch (err) {
-          socket.emit('agent:result', { command, result: { error: `Payment failed: ${err.message}` } });
-          return;
-        }
-
-        // Step 2: Execute command (payment already taken)
-        const result = world.execute(agentId, command);
-        if (!result.ok) {
-          // Refund — command failed after payment
-          payments.credit(agentId, service.price, `Refund: ${serviceName} failed`);
-          socket.emit('agent:result', { command, result });
-          return;
-        }
-        result.payment = payResult;
-
-        // Check quest completion for paid services too
-        const agent = world.getAgent(agentId);
-        if (agent) {
-          const completed = checkQuests(world, agent);
-          if (completed.length > 0) {
-            for (const q of completed) {
-              if (q.reward > 0) payments.credit(agentId, q.reward, `Quest: ${q.description}`);
-            }
-            socket.emit('quest:completed', completed);
-          }
-        }
-
-        socket.emit('agent:result', { command, result });
-        io.emit('world:update', world.getState());
-        return;
-      }
-    }
-
-    // All other commands — no payment
-    const result = world.execute(agentId, command);
-    socket.emit('agent:result', { command, result });
-
-    // Mint tile NFT on successful build
-    if (result.ok && result.isHome !== undefined) {
-      const agent = world.getAgent(agentId);
-      if (agent?.ownerWallet) {
-        const tile = world.getTile(agent.x, agent.y);
-        if (tile) {
-          const resourceMap = { coral: 0, crystal: 1, kelp: 2, shell: 3 };
-          chain.mintTileNFT(agent.ownerWallet, tile.x, tile.y, resourceMap[tile.resource] ?? 0, tile.symbol).catch(() => {});
-        }
-      }
-    }
-
-    // Check quest completion after every action
-    if (result.ok) {
-      const agent = world.getAgent(agentId);
-      if (agent) {
-        const completed = checkQuests(world, agent);
-        if (completed.length > 0) {
-          // Credit quest rewards via payment ledger
-          for (const q of completed) {
-            if (q.reward > 0) {
-              payments.credit(agentId, q.reward, `Quest: ${q.description}`);
-            }
-          }
-          socket.emit('quest:completed', completed);
-        }
-      }
-      io.emit('world:update', world.getState());
+    try {
+      const { result, completed } = await executeWithSideEffects(agentId, command);
+      socket.emit('agent:result', { command, result });
+      if (completed?.length > 0) socket.emit('quest:completed', completed);
+      if (result.ok) io.emit('world:update', world.getState());
+    } catch (err) {
+      socket.emit('agent:result', { command, result: { error: `Command failed: ${err.message}` } });
     }
   });
 
