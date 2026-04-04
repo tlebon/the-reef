@@ -95,6 +95,7 @@ io.on('connection', (socket) => {
       const existing = world.getAgentByWallet(walletAddress);
       if (existing) {
         // Reconnect to existing agent
+        socket.agentId = existing.id;
         socket.emit('agent:registered', { agent: existing, tile: world.getTile(existing.x, existing.y) });
         return;
       }
@@ -108,6 +109,7 @@ io.on('connection', (socket) => {
     if (result.error) {
       socket.emit('agent:error', result);
     } else {
+      socket.agentId = result.agent.id;
       socket.emit('agent:registered', result);
       io.emit('world:agent_joined', { agent: result.agent, tile: result.tile });
 
@@ -127,8 +129,16 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Link delegate wallet to existing agent
+  // Link delegate wallet to existing agent — only the socket that registered this agent can link
   socket.on('agent:link_delegate', ({ agentId, delegateWallet }) => {
+    if (socket.agentId !== agentId) {
+      socket.emit('agent:link_result', { error: 'Not authorized — you can only link delegates to your own agent' });
+      return;
+    }
+    if (delegateWallet && !/^0x[a-fA-F0-9]{40}$/.test(delegateWallet)) {
+      socket.emit('agent:link_result', { error: 'Invalid delegate wallet address' });
+      return;
+    }
     const result = world.linkDelegate(agentId, delegateWallet);
     socket.emit('agent:link_result', result);
   });

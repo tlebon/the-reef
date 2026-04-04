@@ -131,6 +131,10 @@ export default function App() {
       onCreateWallet={() => {
         const w = createWallet();
         addActivity(`New wallet created: ${w.address.slice(0, 10)}...`);
+        // Show private key once — user must save it
+        if (w.privateKey) {
+          alert(`SAVE YOUR PRIVATE KEY — it will not be shown again:\n\n${w.privateKey}\n\nAddress: ${w.address}`);
+        }
       }}
       connecting={connecting}
       walletError={walletError}
