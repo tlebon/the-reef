@@ -38,7 +38,7 @@ contract ReefTile is ERC721, Ownable {
         string calldata symbol
     ) external onlyOwner returns (uint256) {
         bytes32 posKey = keccak256(abi.encodePacked(x, y));
-        require(positionToToken[posKey] == 0 || !_exists(positionToToken[posKey]), "ReefTile: tile already minted");
+        require(positionToToken[posKey] == 0, "ReefTile: tile already minted");
         require(resourceType <= 3, "ReefTile: invalid resource type");
 
         uint256 tokenId = ++nextTokenId;
