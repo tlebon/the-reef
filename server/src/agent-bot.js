@@ -61,12 +61,14 @@ socket.on('agent:registered', ({ agent }) => {
   socket.emit('agent:look', { agentId });
 });
 
-socket.on('agent:error', ({ error }) => {
+socket.on('agent:error', async ({ error }) => {
   console.error(`[bot] Registration error: ${error}`);
   if (error.includes('already taken')) {
     const newName = BOT_NAME + Math.floor(Math.random() * 999);
     console.log(`[bot] Retrying with name: ${newName}`);
-    socket.emit('agent:register', { name: newName, archetype: BOT_ARCHETYPE, walletAddress: WALLET });
+    const msg = `Sign in to The Reef\nWallet: ${WALLET}\nTimestamp: ${Date.now()}`;
+    const sig = await wallet.signMessage(msg);
+    socket.emit('agent:register', { name: newName, archetype: BOT_ARCHETYPE, walletAddress: WALLET, signature: sig, message: msg });
   }
 });
 
@@ -156,6 +158,8 @@ process.on('SIGINT', () => {
 
 socket.on('disconnect', () => {
   console.log('[bot] Disconnected from server');
+  agentId = null;
+  pendingDecision = false;
 });
 
 socket.on('connect_error', (err) => {

@@ -162,13 +162,14 @@ function verifyWalletAuth(req, res, next) {
     return res.status(403).json({ error: 'Invalid signature' });
   }
 
-  // Verify timestamp freshness (15 minute window)
+  // Require and verify timestamp freshness (15 minute window)
   const tsMatch = message.match(/Timestamp: (\d+)/);
-  if (tsMatch) {
-    const sigAge = Date.now() - parseInt(tsMatch[1]);
-    if (sigAge > 15 * 60 * 1000) {
-      return res.status(403).json({ error: 'Signature expired' });
-    }
+  if (!tsMatch) {
+    return res.status(403).json({ error: 'Invalid signature message — missing timestamp' });
+  }
+  const sigAge = Date.now() - parseInt(tsMatch[1]);
+  if (sigAge > 15 * 60 * 1000) {
+    return res.status(403).json({ error: 'Signature expired' });
   }
 
   next();
