@@ -242,7 +242,7 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
                 const resp = await fetch(`/api/agent/${wallet.address}/claim`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', 'x-wallet-signature': sig, 'x-wallet-message': encodeURIComponent(msg) },
-                  body: JSON.stringify({ nonce: 0 }),
+                  body: JSON.stringify({}),
                 });
                 const claim = await resp.json();
                 if (claim.error) { alert(claim.error); return; }

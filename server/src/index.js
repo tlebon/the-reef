@@ -207,13 +207,28 @@ app.post('/api/agent/:walletAddress/claim', verifyWalletAuth, resolveAgentByWall
     return res.status(400).json({ error: 'No resources to claim' });
   }
 
-  const nonce = req.body.nonce ?? 0;
+  // Read nonce from contract to prevent replay
+  let nonce = 0;
+  try {
+    if (chain.reefResource) {
+      nonce = Number(await chain.reefResource.claimNonce(agent.ownerWallet));
+    }
+  } catch { /* fallback to 0 */ }
+
   const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour
 
   const claim = await chain.signResourceClaim(agent.ownerWallet, ids, amounts, nonce, deadline);
   if (!claim) {
     return res.status(503).json({ error: 'Chain signing unavailable — running in local mode' });
   }
+
+  // Deduct claimed resources from in-game inventory
+  for (const [name] of Object.entries(resourceMap)) {
+    if (agent.inventory?.[name] > 0) {
+      agent.inventory[name] = 0;
+    }
+  }
+  saveWorldState(world);
 
   res.json({
     ...claim,
