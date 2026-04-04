@@ -60,8 +60,8 @@ export default function TilePanel({ tile, agents, myAgentId, onCommand, onClose 
       {tileServices.length > 0 && (
         <div style={styles.section}>
           <h4 style={styles.sectionTitle}>Services</h4>
-          {tileServices.map((s, i) => (
-            <div key={i} style={styles.service}>
+          {tileServices.map((s) => (
+            <div key={`${s.agentId}-${s.name}`} style={styles.service}>
               <div style={styles.serviceName}>{s.name}</div>
               <div style={styles.serviceDesc}>{s.description}</div>
               <div style={styles.servicePrice}>{s.price} USDC</div>

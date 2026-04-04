@@ -44,6 +44,8 @@ export class ChainConnector {
       return false;
     }
 
+    // Remove any existing listener before adding new one
+    this.provider.removeAllListeners('block');
     this.provider.on('block', (blockNumber) => {
       callback(blockNumber);
     });

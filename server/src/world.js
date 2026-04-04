@@ -475,7 +475,8 @@ export class World {
     if (agent.energy < 2) return { error: 'Not enough energy' };
 
     const name = args[0];
-    const price = parseFloat(args[1]) || 0.01;
+    const price = parseFloat(args[1]);
+    if (!Number.isFinite(price) || price < 0 || price > 1000) return { error: 'Price must be a number between 0 and 1000' };
     const description = args.slice(2).join(' ');
 
     const tile = this.getTile(agent.x, agent.y);

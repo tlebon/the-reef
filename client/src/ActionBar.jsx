@@ -67,8 +67,8 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
               <div style={styles.tileLabel}>Your tile ({currentTile.resource})</div>
               {currentTile.services && currentTile.services.length > 0 && (
                 <div style={styles.serviceList}>
-                  {currentTile.services.filter(s => s.agentId === agent.id).map((s, i) => (
-                    <div key={i} style={styles.serviceItem}>
+                  {currentTile.services.filter(s => s.agentId === agent.id).map((s) => (
+                    <div key={s.name} style={styles.serviceItem}>
                       <span style={styles.serviceName}>{s.name}</span>
                       <span style={styles.servicePrice}>{s.price} USDC</span>
                       <button style={styles.smallBtn} onClick={() => onCommand(`REMOVE_SERVICE ${s.name}`)}>x</button>
