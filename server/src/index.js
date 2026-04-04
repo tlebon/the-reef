@@ -220,6 +220,18 @@ io.on('connection', (socket) => {
         const payResult = await payments.processPayment(agentId, target.id, service.price, serviceName);
         result.payment = payResult;
 
+        // Check quest completion for paid services too
+        const agent = world.getAgent(agentId);
+        if (agent) {
+          const completed = checkQuests(world, agent);
+          if (completed.length > 0) {
+            for (const q of completed) {
+              if (q.reward > 0) payments.credit(agentId, q.reward, `Quest: ${q.description}`);
+            }
+            socket.emit('quest:completed', completed);
+          }
+        }
+
         socket.emit('agent:result', { command, result });
         io.emit('world:update', world.getState());
         return;
