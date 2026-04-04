@@ -92,11 +92,13 @@ export default function ActionBar({ agent, currentTile, messages, onCommand }) {
                 const desc = prompt('Bounty description:');
                 if (desc) onCommand(`POST_BOUNTY ${reward} ${desc}`);
               }}>Post bounty</button>
+              <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
             </>
           ) : currentTile && currentTile.built ? (
             // On someone else's tile
             <>
               <div style={styles.tileLabel}>{currentTile.resource} tile (owned)</div>
+              <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
               <button style={styles.actionBtn} onClick={() => {
                 const msg = prompt('Say something:');
                 if (msg) onCommand(`SAY ${msg}`);
@@ -123,6 +125,7 @@ export default function ActionBar({ agent, currentTile, messages, onCommand }) {
                 <button style={styles.actionBtn} onClick={() => setShowBuild(true)}>
                   {agent.tilesOwned === 0 ? 'Claim home tile (free)' : 'Mint tile (costs resources)'}
                 </button>
+                <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
               </>
             )
           ) : null}

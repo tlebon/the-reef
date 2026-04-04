@@ -11,10 +11,10 @@ import fs from 'fs';
 const RESOURCES = ['coral', 'crystal', 'kelp', 'shell'];
 
 const RARITY_TABLE = [
-  { rarity: 'common',    chance: 0.80, color: '#8892a4' },
-  { rarity: 'uncommon',  chance: 0.15, color: '#00b894' },
-  { rarity: 'rare',      chance: 0.04, color: '#a29bfe' },
-  { rarity: 'legendary', chance: 0.01, color: '#fdcb6e' },
+  { rarity: 'common',    chance: 0.50, color: '#8892a4' },
+  { rarity: 'uncommon',  chance: 0.08, color: '#00b894' },
+  { rarity: 'rare',      chance: 0.005, color: '#a29bfe' },
+  { rarity: 'legendary', chance: 0.001, color: '#fdcb6e' },
 ];
 
 const LOOT_NAMES = {
@@ -171,6 +171,7 @@ export class World {
       case 'SAY':       return this._cmdSay(agent, parts.slice(1).join(' '));
       case 'BUILD':     return this._cmdBuild(agent, args[0]);
       case 'TRADE':     return this._cmdTrade(agent, args);
+      case 'SCAVENGE':  return this._cmdScavenge(agent);
       case 'REGISTER_SERVICE': return this._cmdRegisterService(agent, args);
       case 'REMOVE_SERVICE':   return this._cmdRemoveService(agent, args);
       case 'INVOKE_SERVICE':   return this._cmdInvokeService(agent, args);
@@ -288,27 +289,6 @@ export class World {
 
     const result = { ok: true, message: `Moved ${direction} to (${nx},${ny})`, energy: agent.energy };
 
-    // Roll for loot on first visit
-    if (!tile.visitedBy) tile.visitedBy = [];
-    if (!tile.visitedBy.includes(agent.id)) {
-      tile.visitedBy.push(agent.id);
-      const items = this._rollLoot(tile);
-      if (items.length > 0) {
-        if (!agent.loot) agent.loot = [];
-        agent.loot.push(...items);
-        result.loot = items;
-        const best = items.reduce((a, b) =>
-          RARITY_TABLE.findIndex(t => t.rarity === b.rarity) > RARITY_TABLE.findIndex(t => t.rarity === a.rarity) ? b : a
-        );
-        result.message += items.length === 1
-          ? ` — Found ${best.rarity} ${best.name}!`
-          : ` — Found ${items.length} items! (${best.rarity} ${best.name})`;
-        for (const item of items) {
-          this._log(`${agent.name} found ${item.rarity} ${item.name} at (${nx},${ny})`);
-        }
-      }
-    }
-
     this._log(`${agent.name} moved ${direction} to (${nx},${ny})`);
     return result;
   }
@@ -423,6 +403,49 @@ export class World {
 
     this._log(`${agent.name} traded ${giveAmt} ${giveRes} for ${wantAmt} ${wantRes} with ${target.name}`);
     return { ok: true, message: `Traded ${giveAmt} ${giveRes} for ${wantAmt} ${wantRes} with ${targetName}` };
+  }
+
+  _cmdScavenge(agent) {
+    const SCAVENGE_COST = 2;
+    if (agent.energy < SCAVENGE_COST) return { error: `Not enough energy (need ${SCAVENGE_COST}, have ${agent.energy})` };
+
+    const tile = this.getTile(agent.x, agent.y);
+    if (!tile) return { error: 'Nothing to scavenge here' };
+
+    agent.energy -= SCAVENGE_COST;
+
+    // Tile owner gets a cut of resources found
+    const tileOwner = tile.owner ? this.agents.get(tile.owner) : null;
+
+    // Always get some of the tile's resource
+    const baseAmount = tile.resource === ARCHETYPES[agent.archetype]?.affinity ? 3 : 1;
+    agent.inventory[tile.resource] = (agent.inventory[tile.resource] || 0) + baseAmount;
+
+    // Owner gets a portion if someone else scavenges their tile
+    if (tileOwner && tileOwner.id !== agent.id) {
+      tileOwner.inventory[tile.resource] = (tileOwner.inventory[tile.resource] || 0) + 1;
+    }
+
+    // Roll for loot items
+    const items = this._rollLoot(tile);
+    let message = `Scavenged ${baseAmount} ${tile.resource}`;
+
+    if (items.length > 0) {
+      if (!agent.loot) agent.loot = [];
+      agent.loot.push(...items);
+      const best = items.reduce((a, b) =>
+        RARITY_TABLE.findIndex(t => t.rarity === b.rarity) > RARITY_TABLE.findIndex(t => t.rarity === a.rarity) ? b : a
+      );
+      message += items.length === 1
+        ? ` — Found ${best.rarity} ${best.name}!`
+        : ` — Found ${items.length} items! (${best.rarity} ${best.name})`;
+      for (const item of items) {
+        this._log(`${agent.name} found ${item.rarity} ${item.name} at (${agent.x},${agent.y})`);
+      }
+    }
+
+    this._log(`${agent.name} scavenged at (${agent.x},${agent.y})`);
+    return { ok: true, message, energy: agent.energy, loot: items.length > 0 ? items : undefined };
   }
 
   _cmdRegisterService(agent, args) {
@@ -574,12 +597,13 @@ export class World {
       agent.energy = Math.min(MAX_ENERGY, agent.energy + ENERGY_REGEN);
     }
 
-    // Harvest resources — agents on tiles with resources collect them
-    for (const agent of this.agents.values()) {
-      const tile = this.getTile(agent.x, agent.y);
-      if (tile && tile.resource) {
-        const amount = tile.resource === ARCHETYPES[agent.archetype].affinity ? 2 : 1;
-        agent.inventory[tile.resource] = (agent.inventory[tile.resource] || 0) + amount;
+    // Tile owners passively earn a trickle of their tile's resource
+    for (const tile of this.tiles.values()) {
+      if (tile.built && tile.owner) {
+        const owner = this.agents.get(tile.owner);
+        if (owner) {
+          owner.inventory[tile.resource] = (owner.inventory[tile.resource] || 0) + 1;
+        }
       }
     }
 
