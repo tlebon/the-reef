@@ -293,6 +293,8 @@ io.on('connection', (socket) => {
         let payResult;
         try {
           payResult = await payments.processPayment(agentId, target.id, service.price, serviceName);
+          // Persist balance change immediately (don't wait for tick)
+          saveWorldState(world);
           if (payResult.error) {
             socket.emit('agent:result', { command, result: { error: payResult.error } });
             return;
@@ -419,6 +421,7 @@ async function start() {
       if (ensData) {
         const id = `agent-recovered-${walletAddr.slice(2, 10)}`;
         world.addAgent(id, ensData.name, ensData.archetype, { ownerWallet: walletAddr, ensName: ensData.ensName });
+        if (ensData.ensName) ens.trackSubname?.(ensData.ensName);
         console.log(`  Recovered agent: ${ensData.name} (${ensData.archetype}) from ENS`);
       }
     }
