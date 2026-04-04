@@ -9,6 +9,7 @@ import JoinPanel from './JoinPanel.jsx';
 import Welcome from './Welcome.jsx';
 import ActionBar from './ActionBar.jsx';
 import { useWallet } from './useWallet.js';
+import KeyModal from './KeyModal.jsx';
 
 const SOCKET_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3001'
@@ -26,7 +27,8 @@ export default function App() {
   const [latestBlock, setLatestBlock] = useState(null);
   const [joining, setJoining] = useState(false);
   const [completedQuest, setCompletedQuest] = useState(null);
-  const { wallet, connecting, error: walletError, connectMetaMask, createWallet, disconnect } = useWallet();
+  const { wallet, connecting, error: walletError, savedAddress, connectMetaMask, createWallet, disconnect } = useWallet();
+  const [newWalletKey, setNewWalletKey] = useState(null);
 
   useEffect(() => {
     const s = io(SOCKET_URL);
@@ -133,13 +135,21 @@ export default function App() {
       onCreateWallet={() => {
         const w = createWallet();
         addActivity(`New wallet created: ${w.address.slice(0, 10)}...`);
-        // Show private key once — user must save it
         if (w.privateKey) {
-          alert(`SAVE YOUR PRIVATE KEY — it will not be shown again:\n\n${w.privateKey}\n\nAddress: ${w.address}`);
+          setNewWalletKey(w);
         }
       }}
       connecting={connecting}
       walletError={walletError}
+      savedAddress={savedAddress}
+    />;
+  }
+
+  if (newWalletKey) {
+    return <KeyModal
+      privateKey={newWalletKey.privateKey}
+      address={newWalletKey.address}
+      onConfirm={() => { setNewWalletKey(null); setShowJoin(true); }}
     />;
   }
 

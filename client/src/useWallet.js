@@ -7,13 +7,14 @@ import { useState, useCallback } from 'react';
 import { ethers } from 'ethers';
 
 export function useWallet() {
-  const [wallet, setWallet] = useState(() => {
+  // Don't auto-restore wallets — require fresh signature on each session
+  // We only remember the address to show "reconnect as 0x..." prompt
+  const [wallet, setWallet] = useState(null);
+  const [savedAddress, setSavedAddress] = useState(() => {
     try {
       const saved = localStorage.getItem('reef-wallet');
       if (!saved) return null;
-      const parsed = JSON.parse(saved);
-      if (parsed.type === 'generated') return null;
-      return parsed;
+      return JSON.parse(saved).address || null;
     } catch {
       localStorage.removeItem('reef-wallet');
       return null;
@@ -66,7 +67,7 @@ export function useWallet() {
     localStorage.setItem('reef-wallet', JSON.stringify({ address: newWallet.address, type: 'generated' }));
     setWallet(walletData);
     return walletData;
-  }, []);
+  }, [wallet]);
 
   const disconnect = useCallback(() => {
     localStorage.removeItem('reef-wallet');
@@ -77,6 +78,7 @@ export function useWallet() {
 
   return {
     wallet,
+    savedAddress,
     connecting,
     error,
     connectMetaMask,
