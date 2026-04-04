@@ -47,6 +47,13 @@ contract ReefResource is ERC1155, Ownable {
     constructor() ERC1155("") Ownable(msg.sender) {}
 
     /**
+     * @notice Set the base URI for token metadata.
+     */
+    function setURI(string calldata newuri) external onlyOwner {
+        _setURI(newuri);
+    }
+
+    /**
      * @notice Get a human-readable name for a token ID.
      */
     function name(uint256 id) external view returns (string memory) {
@@ -111,7 +118,7 @@ contract ReefResource is ERC1155, Ownable {
         }
 
         // Verify server signature (includes chain ID and contract address to prevent replay)
-        bytes32 hash = keccak256(abi.encodePacked(to, ids, amounts, nonce, block.chainid, address(this)));
+        bytes32 hash = keccak256(abi.encode(to, ids, amounts, nonce, block.chainid, address(this)));
         bytes32 ethHash = hash.toEthSignedMessageHash();
         require(ethHash.recover(signature) == owner(), "ReefResource: invalid signature");
 

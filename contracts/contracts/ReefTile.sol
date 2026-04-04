@@ -26,7 +26,7 @@ contract ReefTile is ERC721, Ownable {
     mapping(uint256 => TileData) public tiles;
     mapping(bytes32 => uint256) public positionToToken;
 
-    event TileMinted(address indexed owner, uint256 indexed tokenId, int256 x, int256 y, uint8 resourceType);
+    event TileMinted(address indexed owner, uint256 indexed tokenId, int256 x, int256 y, uint8 resourceType, string symbol);
 
     constructor() ERC721("Reef Tile", "RTILE") Ownable(msg.sender) {}
 
@@ -46,7 +46,7 @@ contract ReefTile is ERC721, Ownable {
         positionToToken[posKey] = tokenId;
 
         _mint(to, tokenId);
-        emit TileMinted(to, tokenId, x, y, resourceType);
+        emit TileMinted(to, tokenId, x, y, resourceType, symbol);
         return tokenId;
     }
 

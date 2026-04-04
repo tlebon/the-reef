@@ -75,9 +75,11 @@ describe("ReefResource", function () {
     const contractAddr = await resource.getAddress();
 
     // Server signs the claim (includes chainId + contract address)
-    const hash = ethers.solidityPackedKeccak256(
-      ["address", "uint256[]", "uint256[]", "uint256", "uint256", "address"],
-      [user1.address, ids, amounts, nonce, chainId, contractAddr]
+    const hash = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ["address", "uint256[]", "uint256[]", "uint256", "uint256", "address"],
+        [user1.address, ids, amounts, nonce, chainId, contractAddr]
+      )
     );
     const signature = await owner.signMessage(ethers.getBytes(hash));
 
@@ -124,9 +126,11 @@ describe("ReefResource", function () {
     const nonce = 0;
 
     // Sign with wrong signer (not owner)
-    const hash = ethers.solidityPackedKeccak256(
-      ["address", "uint256[]", "uint256[]", "uint256", "uint256", "address"],
-      [user1.address, ids, amounts, nonce, (await ethers.provider.getNetwork()).chainId, await resource.getAddress()]
+    const hash = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ["address", "uint256[]", "uint256[]", "uint256", "uint256", "address"],
+        [user1.address, ids, amounts, nonce, (await ethers.provider.getNetwork()).chainId, await resource.getAddress()]
+      )
     );
     const signature = await user2.signMessage(ethers.getBytes(hash));
 
