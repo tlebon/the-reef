@@ -196,7 +196,8 @@ app.post('/api/agent/:walletAddress/claim', verifyWalletAuth, resolveAgentByWall
   const ids = [];
   const amounts = [];
 
-  // Read on-chain balances to only mint the delta
+  // Read on-chain balances, mint positive deltas, burn negative deltas
+  const burns = [];
   for (const [name, id] of Object.entries(resourceMap)) {
     const inGame = agent.inventory?.[name] || 0;
     let onChain = 0;
@@ -209,11 +210,31 @@ app.post('/api/agent/:walletAddress/claim', verifyWalletAuth, resolveAgentByWall
     if (delta > 0) {
       ids.push(id);
       amounts.push(delta);
+    } else if (delta < 0) {
+      burns.push({ id, amount: Math.abs(delta), name });
     }
   }
 
+  // Burn excess on-chain resources (server is contract owner)
+  for (const burn of burns) {
+    try {
+      if (chain.reefResource) {
+        const tx = await chain.reefResource.burnResource(agent.ownerWallet, burn.id, burn.amount);
+        await tx.wait();
+        console.log(`  Chain: burned ${burn.amount} ${burn.name} from ${agent.ownerWallet.slice(0, 10)}...`);
+      }
+    } catch (err) {
+      console.error(`  Chain: failed to burn ${burn.name} — ${err.message}`);
+    }
+  }
+
+  if (ids.length === 0 && burns.length === 0) {
+    return res.status(400).json({ error: 'On-chain balances already match (nothing to sync)' });
+  }
+
+  // If only burns (no new resources to mint), return early
   if (ids.length === 0) {
-    return res.status(400).json({ error: 'On-chain balances already match (nothing new to claim)' });
+    return res.json({ ok: true, burns, message: 'Burned excess on-chain resources to match in-game state' });
   }
 
   // Read nonce from contract to prevent replay
