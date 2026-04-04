@@ -132,8 +132,8 @@ export default function App() {
         const w = await connectMetaMask();
         if (w) addActivity(`Wallet connected: ${w.address.slice(0, 10)}...`);
       }}
-      onCreateWallet={() => {
-        const w = createWallet();
+      onCreateWallet={async () => {
+        const w = await createWallet();
         addActivity(`New wallet created: ${w.address.slice(0, 10)}...`);
         if (w.privateKey) {
           setNewWalletKey(w);

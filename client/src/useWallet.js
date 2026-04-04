@@ -54,16 +54,21 @@ export function useWallet() {
     }
   }, []);
 
-  // Create a new wallet — returns private key once, does NOT persist it
-  const createWallet = useCallback(() => {
+  // Create a new wallet — signs auth message, returns private key once
+  const createWallet = useCallback(async () => {
     if (wallet) return wallet; // prevent double-create
     const newWallet = ethers.Wallet.createRandom();
+    const message = `Sign in to The Reef\nAddress: ${newWallet.address}\nTimestamp: ${Date.now()}`;
+    const signature = await newWallet.signMessage(message);
+
     const walletData = {
       address: newWallet.address,
       privateKey: newWallet.privateKey, // shown to user once, not stored
+      signature,
+      message,
       type: 'generated',
     };
-    // Only persist the address, NOT the private key
+    // Only persist the address, NOT the private key or signature
     localStorage.setItem('reef-wallet', JSON.stringify({ address: newWallet.address, type: 'generated' }));
     setWallet(walletData);
     return walletData;
