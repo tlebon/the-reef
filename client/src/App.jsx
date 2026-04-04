@@ -258,6 +258,14 @@ export default function App() {
           <span style={styles.myAgent}>
             {worldState.agents[myAgentId]?.name || myAgentId}
             {wallet && <span style={styles.walletBadge}>{wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}</span>}
+            {worldState.agents[myAgentId]?.delegateWallet ? (
+              <span style={{ color: '#00d4aa', fontSize: '0.7rem', marginLeft: '4px' }}>AI linked</span>
+            ) : (
+              <button style={styles.logoutBtn} onClick={() => {
+                const addr = prompt('Enter delegate wallet address for AI agent:');
+                if (addr) handleCommand(`LINK_DELEGATE ${addr}`);
+              }}>Link AI</button>
+            )}
             <button style={styles.logoutBtn} onClick={() => { disconnect(); setMyAgentId(null); setShowWelcome(true); setShowJoin(false); }}>logout</button>
           </span>
         )}
@@ -271,28 +279,6 @@ export default function App() {
             <p style={styles.modalReward}>+{completedQuest.reward} USDC</p>
             <button style={styles.modalBtn} onClick={() => setCompletedQuest(null)}>Continue</button>
           </div>
-        </div>
-      )}
-
-      {myAgentId && worldState.agents[myAgentId] && (
-        <div style={styles.topBar}>
-          <span style={{ color: '#00d4aa', fontWeight: 600 }}>The Reef</span>
-          <span style={{ color: '#c8d6e5' }}>{worldState.agents[myAgentId].name}</span>
-          {worldState.agents[myAgentId].ensName && (
-            <span style={{ color: '#5f6d7e' }}>{worldState.agents[myAgentId].ensName}</span>
-          )}
-          {wallet?.address && (
-            <span style={{ color: '#3d4a5c' }}>{wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}</span>
-          )}
-          <span style={{ flex: 1 }} />
-          {worldState.agents[myAgentId].delegateWallet ? (
-            <span style={{ color: '#00d4aa', fontSize: '0.75rem' }}>AI: {worldState.agents[myAgentId].delegateWallet.slice(0, 6)}...{worldState.agents[myAgentId].delegateWallet.slice(-4)}</span>
-          ) : (
-            <button style={{ padding: '4px 10px', background: '#1a2035', color: '#00d4aa', border: '1px solid #00d4aa', borderRadius: '3px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.75rem' }} onClick={() => {
-              const addr = prompt('Enter delegate wallet address for AI agent:');
-              if (addr) handleCommand(`LINK_DELEGATE ${addr}`);
-            }}>Link AI</button>
-          )}
         </div>
       )}
 
