@@ -17,6 +17,7 @@ import { seedWorld, tickNPCs, createAgentQuests } from './seed.js';
 import { checkQuests } from './quests.js';
 import { ENSManager } from './ens.js';
 import { PaymentManager } from './payments.js';
+import { initDB, saveWorldState, loadAgents, loadTiles, loadBounties, getWorldMeta, getAgentByWallet as dbGetAgentByWallet } from './db.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -142,11 +143,33 @@ io.on('connection', (socket) => {
       }
     }
 
+    // No local agent — try to recover from ENS
+    if (!name || !archetype) {
+      if (walletAddress && ens.enabled) {
+        const ensData = await ens.resolveWalletToAgent(walletAddress);
+        if (ensData) {
+          const id = `agent-${crypto.randomUUID()}`;
+          const result = world.addAgent(id, ensData.name, ensData.archetype, {
+            ownerWallet: walletAddress,
+            ensName: ensData.ensName,
+          });
+          if (!result.error) {
+            socket.agentId = result.agent.id;
+            socket.emit('agent:registered', result);
+            console.log(`  Recovered agent from ENS: ${ensData.name} (${walletAddress.slice(0, 10)}...)`);
+            return;
+          }
+        }
+      }
+      socket.emit('agent:error', { error: 'No agent found for this wallet. Please create a new character.' });
+      return;
+    }
+
     const id = `agent-${crypto.randomUUID()}`;
     const result = world.addAgent(id, name, archetype, {
       ownerWallet: walletAddress || null,
       delegateWallet: delegateWallet || null,
-      ensName: ens.enabled ? ens.getSubname(name) : null,
+      ensName: (ens.enabled && name) ? ens.getSubname(name) : null,
     });
     if (result.error) {
       socket.emit('agent:error', result);
@@ -165,7 +188,8 @@ io.on('connection', (socket) => {
         socket.emit('quest:completed', completed);
       }
 
-      // Register on-chain sequentially (same wallet, can't send in parallel)
+      // Track and register on-chain sequentially
+      if (ens.enabled && name) ens.trackSubname(ens.getSubname(name));
       (async () => {
         try {
           await ens.registerSubname(name, walletAddress, { archetype });
@@ -289,8 +313,8 @@ function processTick(blockNumber) {
   // Commit state hash on-chain (fire and forget)
   chain.commitTick(world.tick, hash).catch(() => {});
 
-  // Persist world state
-  world.save(SAVE_PATH);
+  // Persist world state to SQLite
+  saveWorldState(world);
 
   const src = blockNumber ? `block #${blockNumber}` : 'interval';
   console.log(`Tick ${world.tick} (${src}) | ${world.agents.size} agents | ${world.tiles.size} tiles | hash: ${hash.slice(0, 16)}...`);
@@ -302,11 +326,39 @@ async function start() {
   await chain.init();
   await ens.init();
   await payments.init();
+  initDB();
 
-  // Load saved state or seed fresh
-  const loaded = world.load(SAVE_PATH);
-  if (!loaded) {
+  // Load from SQLite or seed fresh
+  const savedTick = getWorldMeta('tick');
+  if (savedTick !== null) {
+    world.tick = savedTick;
+    for (const agent of loadAgents()) {
+      world.agents.set(agent.id, agent);
+      if (agent.ensName) ens.trackSubname?.(agent.ensName);
+    }
+    for (const tile of loadTiles()) {
+      world.tiles.set(`${tile.x},${tile.y}`, tile);
+    }
+    world.bounties = loadBounties();
+    console.log(`  DB: loaded ${world.agents.size} agents, ${world.tiles.size} tiles, tick ${world.tick}`);
+  }
+  if (world.agents.size === 0) {
     seedWorld(world);
+  }
+
+  // Recover agents from on-chain data if they're missing from local state
+  const onChainAgents = await chain.getRegisteredAgents();
+  for (const walletAddr of onChainAgents) {
+    if (!world.getAgentByWallet(walletAddr)) {
+      // Agent exists on-chain but not in local state — resolve ENS name
+      const ensName = ens.enabled ? await ens.resolveWalletToName(walletAddr) : null;
+      if (ensName) {
+        const agentName = ensName.replace(`.${ens.parentName}`, '');
+        const id = `agent-recovered-${walletAddr.slice(2, 10)}`;
+        world.addAgent(id, agentName, 'builder', { ownerWallet: walletAddr, ensName });
+        console.log(`  Recovered agent: ${agentName} (${walletAddr.slice(0, 10)}...)`);
+      }
+    }
   }
 
   // Sync ticks to blocks via WebSocket — 2 ticks per block (6s each, 12s blocks)

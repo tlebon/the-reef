@@ -23,7 +23,10 @@ export default function App() {
   const [selectedTile, setSelectedTile] = useState(null);
   const [myAgentId, setMyAgentId] = useState(() => localStorage.getItem('reef-agent-id'));
   const [showJoin, setShowJoin] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('reef-agent-id'));
+  const [showWelcome, setShowWelcome] = useState(() => {
+    // Skip welcome if we have a wallet or agent saved
+    return !localStorage.getItem('reef-agent-id') && !localStorage.getItem('reef-wallet');
+  });
   const [latestBlock, setLatestBlock] = useState(null);
   const [joining, setJoining] = useState(false);
   const [completedQuest, setCompletedQuest] = useState(null);
