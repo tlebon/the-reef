@@ -88,33 +88,13 @@ export default function App() {
       addActivity(`${agent.name} (${agent.archetype}) joined The Reef`);
     });
 
-    s.on('agent:registered', async ({ agent }) => {
+    s.on('agent:registered', ({ agent }) => {
       setMyAgentId(agent.id);
       localStorage.setItem('reef-agent-id', agent.id);
       setShowJoin(false);
       addActivity(`You joined as ${agent.name}!`);
-
-      // Prompt ENS delegation — allows server to update text records over time
-      if (window.ethereum && agent.ensName) {
-        try {
-          const config = await fetch('/api/config').then(r => r.json());
-          if (config.operatorAddress && config.ensRegistry) {
-            const { ethers } = await import('ethers');
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
-            const registry = new ethers.Contract(
-              config.ensRegistry,
-              ['function setApprovalForAll(address operator, bool approved) external'],
-              signer
-            );
-            addActivity('Approving The Reef to manage your ENS name...');
-            const tx = await registry.setApprovalForAll(config.operatorAddress, true);
-            await tx.wait();
-            addActivity('ENS delegation approved!');
-          }
-        } catch (err) {
-          addActivity('ENS delegation skipped — you can approve later');
-        }
+      if (agent.ensName) {
+        addActivity(`ENS: ${agent.ensName}`);
       }
     });
 
