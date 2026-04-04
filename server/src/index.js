@@ -91,7 +91,7 @@ app.get('/api/services', (req, res) => {
 });
 
 // Invoke a paid service via x402
-app.get('/api/services/:agentName/:serviceName',
+app.post('/api/services/:agentName/:serviceName',
   // x402 middleware — returns 402 if unpaid
   (req, res, next) => {
     const agent = [...world.agents.values()].find(a => a.name === req.params.agentName);

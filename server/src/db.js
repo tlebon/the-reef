@@ -106,13 +106,20 @@ export function saveAgent(agent) {
 
 export function loadAgents() {
   const rows = db.prepare('SELECT * FROM agents').all();
-  return rows.map(row => ({
-    ...row,
-    inventory: JSON.parse(row.inventory),
-    loot: JSON.parse(row.loot),
-    services: JSON.parse(row.services),
-    reputation: JSON.parse(row.reputation),
-  }));
+  return rows.map(row => {
+    try {
+      return {
+        ...row,
+        inventory: JSON.parse(row.inventory || '{}'),
+        loot: JSON.parse(row.loot || '[]'),
+        services: JSON.parse(row.services || '[]'),
+        reputation: JSON.parse(row.reputation || '{}'),
+      };
+    } catch (err) {
+      console.error(`  DB: failed to parse agent ${row.name} — ${err.message}`);
+      return { ...row, inventory: {}, loot: [], services: [], reputation: { transactions: 0, totalRating: 0, count: 0 } };
+    }
+  });
 }
 
 export function getAgentByWallet(wallet) {
