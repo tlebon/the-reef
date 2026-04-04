@@ -138,6 +138,35 @@ app.get('/api/archetypes', (req, res) => {
   });
 });
 
+// ── Agent Automation REST API ───────────────────────────────────────
+
+// Middleware: resolve agent by walletAddress param
+function resolveAgentByWallet(req, res, next) {
+  const agent = world.getAgentByWallet(req.params.walletAddress);
+  if (!agent) return res.status(404).json({ error: 'No agent found for this wallet address' });
+  req.agent = agent;
+  next();
+}
+
+// GET /api/agent/:walletAddress/state — full agent state including surroundings
+app.get('/api/agent/:walletAddress/state', resolveAgentByWallet, (req, res) => {
+  const lookResult = world.execute(req.agent.id, 'LOOK');
+  res.json(lookResult);
+});
+
+// POST /api/agent/:walletAddress/action — submit a command
+app.post('/api/agent/:walletAddress/action', resolveAgentByWallet, (req, res) => {
+  const { command } = req.body;
+  if (!command || typeof command !== 'string') {
+    return res.status(400).json({ error: 'Missing "command" in request body' });
+  }
+  const result = world.execute(req.agent.id, command);
+  if (result.ok) {
+    io.emit('world:update', world.getState());
+  }
+  res.json(result);
+});
+
 // ── WebSocket ────────────────────────────────────────────────────────
 
 io.on('connection', (socket) => {
