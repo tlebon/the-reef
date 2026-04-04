@@ -60,6 +60,7 @@ export class ChainConnector {
     this.reefAgent = null;
     this.reefResource = null;
     this.reefTile = null;
+    this._txQueue = Promise.resolve(); // sequential transaction queue
   }
 
   /**
@@ -136,6 +137,16 @@ export class ChainConnector {
    * Query all registered agents from on-chain events.
    * Returns array of wallet addresses that have been registered.
    */
+  /**
+   * Queue a transaction to run sequentially — prevents nonce conflicts.
+   */
+  _enqueue(fn) {
+    this._txQueue = this._txQueue.then(fn).catch(err => {
+      console.error(`  Chain tx error: ${err.message?.slice(0, 100)}`);
+    });
+    return this._txQueue;
+  }
+
   async getRegisteredAgents() {
     if (!this.enabled) return [];
 
@@ -156,18 +167,14 @@ export class ChainConnector {
    */
   async commitTick(tickNumber, stateHash) {
     if (!this.enabled) return null;
-
-    try {
-      // Convert hex string hash to bytes32
+    return this._enqueue(async () => {
+      const nextTick = Number(await this.reefWorld.latestTick()) + 1;
       const hashBytes = '0x' + stateHash;
-      const tx = await this.reefWorld.commitTick(tickNumber, hashBytes);
+      const tx = await this.reefWorld.commitTick(nextTick, hashBytes);
       const receipt = await tx.wait();
-      console.log(`  Chain: tick ${tickNumber} committed (tx: ${receipt.hash})`);
+      console.log(`  Chain: tick ${nextTick} committed (tx: ${receipt.hash})`);
       return receipt;
-    } catch (err) {
-      console.error(`  Chain: failed to commit tick ${tickNumber} — ${err.message}`);
-      return null;
-    }
+    });
   }
 
   /**
@@ -175,16 +182,12 @@ export class ChainConnector {
    */
   async registerAgent(agentAddress) {
     if (!this.enabled) return null;
-
-    try {
+    return this._enqueue(async () => {
       const tx = await this.reefReputation.registerAgent(agentAddress);
       const receipt = await tx.wait();
       console.log(`  Chain: agent ${agentAddress} registered (tx: ${receipt.hash})`);
       return receipt;
-    } catch (err) {
-      console.error(`  Chain: failed to register agent — ${err.message}`);
-      return null;
-    }
+    });
   }
 
   /**
@@ -208,18 +211,12 @@ export class ChainConnector {
    */
   async mintAgentNFT(ownerAddress, name, archetype, ensName) {
     if (!this.reefAgent) return null;
-
-    try {
+    return this._enqueue(async () => {
       const tx = await this.reefAgent.mintAgent(ownerAddress, name, archetype, ensName || '');
       const receipt = await tx.wait();
-      const event = receipt.logs.find(l => l.fragment?.name === 'AgentMinted');
-      const tokenId = event?.args?.[1];
-      console.log(`  Chain: minted agent NFT #${tokenId} for ${ownerAddress.slice(0, 10)}...`);
-      return { tokenId: tokenId?.toString(), txHash: receipt.hash };
-    } catch (err) {
-      console.error(`  Chain: failed to mint agent NFT — ${err.message}`);
-      return null;
-    }
+      console.log(`  Chain: minted agent NFT for ${ownerAddress.slice(0, 10)}...`);
+      return { txHash: receipt.hash };
+    });
   }
 
   /**
@@ -227,19 +224,14 @@ export class ChainConnector {
    */
   async mintTileNFT(ownerAddress, x, y, resourceType, symbol) {
     if (!this.reefTile) return null;
-
     const resourceMap = { coral: 0, crystal: 1, kelp: 2, shell: 3 };
     const resId = typeof resourceType === 'string' ? (resourceMap[resourceType] ?? 0) : resourceType;
-
-    try {
+    return this._enqueue(async () => {
       const tx = await this.reefTile.mintTile(ownerAddress, x, y, resId, symbol || '#');
       const receipt = await tx.wait();
       console.log(`  Chain: minted tile NFT at (${x},${y}) for ${ownerAddress.slice(0, 10)}...`);
       return { txHash: receipt.hash };
-    } catch (err) {
-      console.error(`  Chain: failed to mint tile NFT — ${err.message}`);
-      return null;
-    }
+    });
   }
 
   /**

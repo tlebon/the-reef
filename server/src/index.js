@@ -193,9 +193,21 @@ io.on('connection', (socket) => {
     if (walletAddress) {
       const existing = world.getAgentByWallet(walletAddress);
       if (existing) {
-        // Reconnect to existing agent — don't broadcast, they're already in the world
+        // Reconnect to existing agent
         socket.agentId = existing.id;
         socket.emit('agent:registered', { agent: existing, tile: world.getTile(existing.x, existing.y) });
+
+        // Mint NFT for existing agents that don't have one yet
+        if (chain.reefAgent) {
+          (async () => {
+            try {
+              const tokenId = await chain.reefAgent.agentOfOwner(walletAddress);
+              if (tokenId == 0) {
+                await chain.mintAgentNFT(walletAddress, existing.name, existing.archetype, existing.ensName || '');
+              }
+            } catch (e) { console.error("  Silent error:", e.message?.slice(0, 100)); }
+          })();
+        }
         return;
       }
     }
@@ -258,6 +270,28 @@ io.on('connection', (socket) => {
           console.error(`  On-chain registration error: ${err.message}`);
         }
       })();
+    }
+  });
+
+  // Claim agent for this socket (reconnection via world:state wallet lookup)
+  socket.on('agent:claim', ({ agentId, walletAddress }) => {
+    console.log(`  Claim: agentId=${agentId} wallet=${walletAddress?.slice(0,10)}`);
+    const agent = world.getAgent(agentId);
+    if (agent && agent.ownerWallet?.toLowerCase() === walletAddress?.toLowerCase()) {
+      socket.agentId = agentId;
+      console.log(`  Claim: success — socket.agentId set to ${agentId}`);
+
+      // Mint NFT if missing
+      if (chain.reefAgent && walletAddress) {
+        (async () => {
+          try {
+            const tokenId = await chain.reefAgent.agentOfOwner(walletAddress);
+            if (tokenId == 0) {
+              await chain.mintAgentNFT(walletAddress, agent.name, agent.archetype, agent.ensName || '');
+            }
+          } catch (e) { console.error("  Silent error:", e.message?.slice(0, 100)); }
+        })();
+      }
     }
   });
 
@@ -421,6 +455,18 @@ async function start() {
       world.tiles.set(`${tile.x},${tile.y}`, tile);
     }
     world.bounties = loadBounties();
+
+    // Sync tick with on-chain state if behind
+    if (chain.enabled && chain.reefWorld) {
+      try {
+        const onChainTick = Number(await chain.reefWorld.latestTick());
+        if (onChainTick > world.tick) {
+          console.log(`  Tick sync: server=${world.tick}, chain=${onChainTick} — advancing to chain`);
+          world.tick = onChainTick;
+        }
+      } catch (e) { console.error("  Silent error:", e.message?.slice(0, 100)); }
+    }
+
     console.log(`  DB: loaded ${world.agents.size} agents, ${world.tiles.size} tiles, tick ${world.tick}`);
   }
   if (world.agents.size === 0) {
