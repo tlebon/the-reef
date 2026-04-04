@@ -299,7 +299,7 @@ export class World {
     if (!tile.visitedBy) tile.visitedBy = [];
     if (!tile.visitedBy.includes(agent.id)) {
       tile.visitedBy.push(agent.id);
-      if (Math.random() < 0.3) {
+      if (Math.random() < 0.15) {
         const loot = this._generateLoot(tile);
         if (!agent.loot) agent.loot = [];
         agent.loot.push(loot);
@@ -585,7 +585,7 @@ export class World {
 
     // Generate random quests periodically (every 5 ticks, max 10 active)
     const activeQuests = this.bounties.filter(b => !b.completed && b.posterId === 'system');
-    if (this.tick % 5 === 0 && activeQuests.length < 10 && this.agents.size > 0) {
+    if (this.tick % 20 === 0 && activeQuests.length < 10 && this.agents.size > 0) {
       const quest = this._generateRandomQuest();
       if (quest) {
         this.bounties.push(quest);

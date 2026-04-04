@@ -25,7 +25,7 @@ export default function BountyPanel({ bounties, agent }) {
     prevAgent.current = { ...agent, inventory: { ...agent.inventory } };
   }, [agent]);
 
-  const active = bounties.filter(b => !b.completed);
+  const active = bounties.filter(b => !b.completed && !b.claimed);
   if (active.length === 0 && !completedQuest) return null;
 
   return (
