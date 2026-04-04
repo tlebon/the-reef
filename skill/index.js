@@ -252,7 +252,8 @@ export const tools = [
       required: ['wallet', 'bounty_id'],
     },
     async execute({ wallet, bounty_id }) {
-      return agentAction(wallet, `CLAIM_BOUNTY ${bounty_id}`);
+      const safeId = bounty_id.replace(/[^a-zA-Z0-9_-]/g, '');
+      return agentAction(wallet, `CLAIM_BOUNTY ${safeId}`);
     },
   },
   {
