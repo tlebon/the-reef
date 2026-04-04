@@ -172,6 +172,7 @@ export class World {
       case 'BUILD':     return this._cmdBuild(agent, args[0]);
       case 'TRADE':     return this._cmdTrade(agent, args);
       case 'SCAVENGE':  return this._cmdScavenge(agent);
+      case 'REST':      return this._cmdRest(agent, args[0]);
       case 'REGISTER_SERVICE': return this._cmdRegisterService(agent, args);
       case 'REMOVE_SERVICE':   return this._cmdRemoveService(agent, args);
       case 'INVOKE_SERVICE':   return this._cmdInvokeService(agent, args);
@@ -405,6 +406,17 @@ export class World {
 
     this._log(`${agent.name} traded ${giveAmt} ${giveRes} for ${wantAmt} ${wantRes} with ${target.name}`);
     return { ok: true, message: `Traded ${giveAmt} ${giveRes} for ${wantAmt} ${wantRes} with ${targetName}` };
+  }
+
+  _cmdRest(agent, resource) {
+    if (!resource) return { error: 'Usage: REST <resource> — consume 3 of a resource for +8 energy' };
+    resource = resource.toLowerCase();
+    if (!RESOURCES.includes(resource)) return { error: `Unknown resource: ${resource}. Options: ${RESOURCES.join(', ')}` };
+    if ((agent.inventory[resource] || 0) < 3) return { error: `Need 3 ${resource} (have ${agent.inventory[resource] || 0})` };
+    agent.inventory[resource] -= 3;
+    agent.energy += 8; // No cap — REST can push above MAX_ENERGY
+    this._log(`${agent.name} rested, consumed 3 ${resource} for energy`);
+    return { ok: true, message: `Consumed 3 ${resource} — energy now ${agent.energy}/${MAX_ENERGY}`, energy: agent.energy };
   }
 
   _cmdScavenge(agent) {

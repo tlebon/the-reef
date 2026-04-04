@@ -129,6 +129,20 @@ export default function ActionBar({ agent, currentTile, messages, onCommand }) {
               </>
             )
           ) : null}
+
+          {/* Rest — available on any tile if you have resources */}
+          {agent.inventory && Object.entries(agent.inventory).some(([,v]) => v >= 3) && (
+            <select
+              style={styles.restSelect}
+              value=""
+              onChange={e => { if (e.target.value) onCommand(`REST ${e.target.value}`); e.target.value = ''; }}
+            >
+              <option value="">Rest (3 resource → +8e)</option>
+              {Object.entries(agent.inventory).filter(([,v]) => v >= 3).map(([res]) => (
+                <option key={res} value={res}>{res} ({agent.inventory[res]})</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
@@ -254,6 +268,17 @@ const styles = {
   },
   servicePrice: {
     color: '#fdcb6e',
+  },
+  restSelect: {
+    padding: '6px 8px',
+    background: '#1a2035',
+    color: '#c8d6e5',
+    border: '1px solid #2d3748',
+    borderRadius: '3px',
+    fontFamily: 'inherit',
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    marginTop: '4px',
   },
   smallBtn: {
     background: 'none',

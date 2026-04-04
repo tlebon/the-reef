@@ -21,6 +21,7 @@ const NPC_AGENTS = [
     archetype: 'merchant',
     services: [
       { name: 'exchange', price: 0.005, description: 'Trade any resource 1:1 at baseline rates' },
+      { name: 'recharge', price: 0.01, description: 'Restore full energy' },
     ],
   },
   {
