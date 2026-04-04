@@ -143,6 +143,9 @@ contract ReefResource is ERC1155, Ownable {
         uint256[] calldata ids,
         uint256[] calldata amounts
     ) external onlyOwner {
+        for (uint256 i = 0; i < ids.length; i++) {
+            require(ids[i] <= SHELL, "ReefResource: can only burn base resources");
+        }
         _burnBatch(from, ids, amounts);
         for (uint256 i = 0; i < ids.length; i++) {
             _totalSupply[ids[i]] -= amounts[i];
