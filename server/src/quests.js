@@ -29,11 +29,13 @@ export function checkQuests(world, agent) {
 
   for (const bounty of world.bounties) {
     if (bounty.completed) continue;
-    if (bounty.claimed && bounty.claimedById !== agent.id) continue;
 
-    // Auto-claim system quests for any agent that completes them
+    // Per-agent quests: only check quests assigned to this agent
+    if (bounty.forAgentId && bounty.forAgentId !== agent.id) continue;
+
+    // Non-system bounties must be claimed first
     const isSystemQuest = bounty.posterId === 'system';
-    if (!isSystemQuest && !bounty.claimed) continue;
+    if (!isSystemQuest && (!bounty.claimed || bounty.claimedById !== agent.id)) continue;
 
     const checkFn = QUEST_CRITERIA[bounty.questType];
     if (!checkFn) continue;

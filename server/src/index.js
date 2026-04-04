@@ -11,7 +11,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { World } from './world.js';
 import { ChainConnector } from './chain.js';
-import { seedWorld, tickNPCs } from './seed.js';
+import { seedWorld, tickNPCs, createAgentQuests } from './seed.js';
 import { checkQuests } from './quests.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -88,6 +88,9 @@ io.on('connection', (socket) => {
       socket.emit('agent:registered', result);
       io.emit('world:agent_joined', { agent: result.agent, tile: result.tile });
 
+      // Create per-agent starter quests
+      createAgentQuests(world, result.agent);
+
       // Check quests on join (triggers "arrive" quest)
       const completed = checkQuests(world, result.agent);
       if (completed.length > 0) {
@@ -141,7 +144,7 @@ function processTick(blockNumber) {
   io.emit('world:tick', { tick: world.tick, block: blockNumber || null, hash, state });
 
   // Commit state hash on-chain (fire and forget)
-  chain.commitTick(world.tick, hash);
+  chain.commitTick(world.tick, hash).catch(() => {});
 
   // Persist world state
   world.save(SAVE_PATH);

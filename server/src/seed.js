@@ -5,7 +5,7 @@
  * NPCs offer basic services and respond to commands automatically.
  */
 
-const SEED_BOUNTIES = [
+export const SEED_BOUNTIES = [
   { id: 'seed-arrive',  reward: 0.005, questType: 'arrive',             description: 'Arrive at The Reef' },
   { id: 'seed-build',   reward: 0.01,  questType: 'build_first',        description: 'Build your first structure on any tile' },
   { id: 'seed-scavenge',reward: 0.005, questType: 'scavenge', target: 3, description: 'Scavenge 3 times' },
@@ -52,33 +52,12 @@ const NPC_SAYINGS = {
  * Skips if already seeded (idempotent).
  */
 export function seedWorld(world) {
-  // Guard against double-seeding (check both bounties and NPCs)
-  const hasSeededBounties = world.bounties.some(b => b.posterId === 'system');
+  // Guard against double-seeding
   const hasSeededNPCs = NPC_AGENTS.some(npc => world.getAgent(npc.id));
-  if (hasSeededBounties && hasSeededNPCs) {
+  if (hasSeededNPCs) {
     console.log('  Seed: already seeded, skipping');
     return;
   }
-
-  // Post seed bounties
-  for (const bounty of SEED_BOUNTIES) {
-    world.bounties.push({
-      id: bounty.id,
-      poster: 'The Reef',
-      posterId: 'system',
-      reward: bounty.reward,
-      description: bounty.description,
-      questType: bounty.questType,
-      target: bounty.target,
-      resource: bounty.resource,
-      claimed: false,
-      claimedBy: null,
-      completed: false,
-      postedAt: 0,
-    });
-  }
-
-  console.log(`  Seed: ${SEED_BOUNTIES.length} starter bounties posted`);
 
   // Spawn NPC agents
   for (const npc of NPC_AGENTS) {
@@ -120,6 +99,30 @@ export function seedWorld(world) {
  * Run NPC behavior for one tick.
  * NPCs don't need LLMs — they follow simple rules.
  */
+/**
+ * Create starter quests for a specific agent.
+ * Called on each agent join — quests are per-agent, not global.
+ */
+export function createAgentQuests(world, agent) {
+  for (const bounty of SEED_BOUNTIES) {
+    world.bounties.push({
+      id: `${bounty.id}-${agent.id}`,
+      poster: 'The Reef',
+      posterId: 'system',
+      forAgentId: agent.id,
+      reward: bounty.reward,
+      description: bounty.description,
+      questType: bounty.questType,
+      target: bounty.target,
+      resource: bounty.resource,
+      claimed: false,
+      claimedBy: null,
+      completed: false,
+      postedAt: world.tick,
+    });
+  }
+}
+
 export function tickNPCs(world) {
   for (const npc of NPC_AGENTS) {
     const agent = world.getAgent(npc.id);

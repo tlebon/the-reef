@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 
-export default function BountyPanel({ bounties }) {
+export default function BountyPanel({ bounties, myAgentId }) {
   const [collapsed, setCollapsed] = useState(false);
 
-  const active = bounties.filter(b => !b.completed && !b.claimed);
+  const active = bounties.filter(b => !b.completed && !b.claimed && (!b.forAgentId || b.forAgentId === myAgentId));
   if (active.length === 0) return null;
 
   return (

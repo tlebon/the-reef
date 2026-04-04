@@ -302,6 +302,7 @@ export class World {
 
   _cmdSay(agent, text) {
     if (!text) return { error: 'Usage: SAY <message>' };
+    if (text.length > 200) text = text.slice(0, 200);
 
     const msg = { from: agent.name, x: agent.x, y: agent.y, text, tick: this.tick };
     this.messages.push(msg);
@@ -483,6 +484,7 @@ export class World {
     if (agent.energy < 2) return { error: 'Not enough energy' };
 
     const name = args[0];
+    if (/\s/.test(name)) return { error: 'Service name cannot contain spaces' };
     const price = parseFloat(args[1]);
     if (!Number.isFinite(price) || price < 0 || price > 1000) return { error: 'Price must be a number between 0 and 1000' };
     const description = args.slice(2).join(' ');

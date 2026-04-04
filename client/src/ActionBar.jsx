@@ -37,7 +37,7 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
     <div style={styles.container}>
       <div style={styles.status}>
         <span style={styles.name}>{agent.name}</span>
-        <span style={styles.energy}>Energy: {agent.energy}/20</span>
+        <span style={styles.energy}>Energy: {agent.energy}{agent.energy > 20 ? ' (boosted)' : '/20'}</span>
         <span style={styles.pos}>({agent.x},{agent.y})</span>
       </div>
 

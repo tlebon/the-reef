@@ -1,5 +1,12 @@
 import React from 'react';
 
+const MINT_COSTS = {
+  coral:   { coral: 3, crystal: 2, kelp: 0, shell: 1 },
+  crystal: { coral: 1, crystal: 3, kelp: 2, shell: 0 },
+  kelp:    { coral: 0, crystal: 1, kelp: 3, shell: 2 },
+  shell:   { coral: 2, crystal: 0, kelp: 1, shell: 3 },
+};
+
 const RESOURCE_COLORS = {
   coral:   '#ff6b6b',
   crystal: '#a29bfe',
@@ -74,13 +81,7 @@ export default function TilePanel({ tile, agents, myAgentId, onCommand, onClose 
         <div style={styles.hint}>
           <p>This tile has {tile.resource} resources. Stand here and build to claim it.</p>
           <p style={{ marginTop: '6px' }}>Mint cost: {(() => {
-            const costs = {
-              coral:   { coral: 3, crystal: 2, kelp: 0, shell: 1 },
-              crystal: { coral: 1, crystal: 3, kelp: 2, shell: 0 },
-              kelp:    { coral: 0, crystal: 1, kelp: 3, shell: 2 },
-              shell:   { coral: 2, crystal: 0, kelp: 1, shell: 3 },
-            };
-            const c = costs[tile.resource] || {};
+            const c = MINT_COSTS[tile.resource] || {};
             return Object.entries(c).filter(([,v]) => v > 0).map(([r,v]) => `${v} ${r}`).join(', ');
           })()}</p>
         </div>
