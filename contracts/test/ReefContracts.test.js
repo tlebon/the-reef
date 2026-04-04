@@ -217,4 +217,21 @@ describe("ReefReputation", function () {
     await reefRep.proposeOperator(pending.address);
     await expect(reefRep.connect(rando).acceptOperator()).to.be.revertedWith("ReefReputation: not pending operator");
   });
+
+  it("should reject proposeOperator to zero address", async function () {
+    await expect(reefRep.proposeOperator(ethers.ZeroAddress)).to.be.revertedWith("ReefReputation: zero address");
+  });
+
+  it("should prevent old operator from proposing after transfer", async function () {
+    await reefRep.proposeOperator(pending.address);
+    await reefRep.connect(pending).acceptOperator();
+    await expect(reefRep.proposeOperator(rando.address)).to.be.revertedWith("ReefReputation: not operator");
+  });
+
+  it("should give self-rating error before duplicate-rating error", async function () {
+    await reefRep.registerAgent(agent1.address);
+    // Self-rating should always say "cannot rate self", not "already rated"
+    await expect(reefRep.connect(agent1).rate(agent1.address, 5))
+      .to.be.revertedWith("ReefReputation: cannot rate self");
+  });
 });

@@ -82,8 +82,9 @@ contract ReefWorld {
     function acceptOperator() external {
         require(msg.sender == pendingOperator, "ReefWorld: not pending operator");
         address old = operator;
-        operator = pendingOperator;
+        address newOp = pendingOperator;
+        operator = newOp;
         pendingOperator = address(0);
-        emit OperatorTransferred(old, operator);
+        emit OperatorTransferred(old, newOp);
     }
 }

@@ -76,9 +76,9 @@ contract ReefReputation {
         require(agents[msg.sender].exists, "ReefReputation: rater must be registered agent");
         AgentRep storage rep = agents[agent];
         require(rep.exists, "ReefReputation: agent not registered");
+        require(msg.sender != agent, "ReefReputation: cannot rate self");
         require(!hasRated[msg.sender][agent], "ReefReputation: already rated this agent");
         require(score >= 1 && score <= 5, "ReefReputation: score must be 1-5");
-        require(msg.sender != agent, "ReefReputation: cannot rate self");
 
         hasRated[msg.sender][agent] = true;
         rep.totalRating += score;
@@ -129,8 +129,9 @@ contract ReefReputation {
     function acceptOperator() external {
         require(msg.sender == pendingOperator, "ReefReputation: not pending operator");
         address old = operator;
-        operator = pendingOperator;
+        address newOp = pendingOperator;
+        operator = newOp;
         pendingOperator = address(0);
-        emit OperatorTransferred(old, operator);
+        emit OperatorTransferred(old, newOp);
     }
 }
