@@ -137,8 +137,8 @@ export default function WorldGrid({ tiles, agents, onSelectAgent, onSelectTile, 
                 </text>
               )}
 
-              {/* Agent indicators — small dots in top-right, stacked */}
-              {tileAgents.map((a, i) => (
+              {/* Agent indicators — max 3 dots, then +N */}
+              {tileAgents.slice(0, 3).map((a, i) => (
                 <g key={a.id}>
                   <circle
                     cx={px + TILE_SIZE - 8 - (i * 12)}
@@ -162,6 +162,17 @@ export default function WorldGrid({ tiles, agents, onSelectAgent, onSelectTile, 
                   </text>
                 </g>
               ))}
+              {tileAgents.length > 3 && (
+                <text
+                  x={px + 6}
+                  y={py + 10}
+                  fill="#5f6d7e"
+                  fontSize="7"
+                  fontFamily="monospace"
+                >
+                  +{tileAgents.length - 3}
+                </text>
+              )}
 
               {/* Coordinates (subtle) */}
               <text

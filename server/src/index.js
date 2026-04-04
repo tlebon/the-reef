@@ -289,32 +289,28 @@ io.on('connection', (socket) => {
       const service = target?.services.find(s => s.name === serviceName);
 
       if (service && service.price > 0) {
-        // Step 1: Check balance
-        const balance = payments.getBalance(agentId);
-        if (balance < service.price) {
-          socket.emit('agent:result', { command, result: { error: `Insufficient balance: have ${balance.toFixed(4)} USDC, need ${service.price} USDC` } });
+        // Step 1: Deduct payment first (atomic with balance check)
+        let payResult;
+        try {
+          payResult = await payments.processPayment(agentId, target.id, service.price, serviceName);
+          if (payResult.error) {
+            socket.emit('agent:result', { command, result: { error: payResult.error } });
+            return;
+          }
+        } catch (err) {
+          socket.emit('agent:result', { command, result: { error: `Payment failed: ${err.message}` } });
           return;
         }
 
-        // Step 2: Execute command
+        // Step 2: Execute command (payment already taken)
         const result = world.execute(agentId, command);
         if (!result.ok) {
+          // Refund — command failed after payment
+          payments.credit(agentId, service.price, `Refund: ${serviceName} failed`);
           socket.emit('agent:result', { command, result });
           return;
         }
-
-        // Step 3: Deduct payment (command succeeded)
-        try {
-          const payResult = await payments.processPayment(agentId, target.id, service.price, serviceName);
-          if (payResult.error) {
-            result.paymentError = payResult.error;
-          } else {
-            result.payment = payResult;
-          }
-        } catch (err) {
-          result.paymentError = `Payment failed: ${err.message}`;
-          console.error(`  Payment error: ${err.message}`);
-        }
+        result.payment = payResult;
 
         // Check quest completion for paid services too
         const agent = world.getAgent(agentId);
