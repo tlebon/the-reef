@@ -110,12 +110,13 @@ export default function App() {
       }
     });
 
+    let retryCount = 0;
     s.on('agent:error', async ({ error }) => {
-      if (error.includes('expired') || error.includes('signature')) {
+      if ((error.includes('expired') || error.includes('signature')) && retryCount < 2) {
+        retryCount++;
         addActivity('Reconnecting wallet...');
         const w = await connectMetaMask();
         if (w) {
-          // Auto-retry registration with fresh signature
           s.emit('agent:register', {
             walletAddress: w.address,
             signature: w.signature,
@@ -124,6 +125,7 @@ export default function App() {
           return;
         }
       }
+      retryCount = 0;
       addActivity(`Error: ${error}`);
       setJoining(false);
     });

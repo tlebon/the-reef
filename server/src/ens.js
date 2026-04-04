@@ -73,7 +73,7 @@ export class ENSManager {
    * Validate that a name is ENS-safe (lowercase alphanumeric + hyphens only).
    */
   static isValidLabel(name) {
-    return /^[a-z0-9-]+$/.test(name) && name.length >= 1 && name.length <= 20;
+    return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(name) && name.length >= 1 && name.length <= 20;
   }
 
   /**
