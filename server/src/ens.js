@@ -69,49 +69,70 @@ export class ENSManager {
   /**
    * Register a subname for an agent: {agentName}.reef.eth
    */
+  /**
+   * Validate that a name is ENS-safe (lowercase alphanumeric + hyphens only).
+   */
+  static isValidLabel(name) {
+    return /^[a-z0-9-]+$/.test(name) && name.length >= 1 && name.length <= 20;
+  }
+
+  /**
+   * Register a subname for an agent: {agentName}.reef.eth
+   * Fire-and-forget — doesn't block the caller.
+   */
   async registerSubname(agentName, ownerAddress, metadata = {}) {
-    if (!this.enabled) {
-      return { ensName: `${agentName}.${this.parentName || 'reef.eth'}`, onChain: false };
+    const safeName = agentName.toLowerCase();
+    const ensName = `${safeName}.${this.parentName || 'reef.eth'}`;
+
+    if (!ENSManager.isValidLabel(safeName)) {
+      return { ensName, onChain: false, error: 'Invalid ENS label — use lowercase letters, numbers, hyphens only' };
     }
 
-    try {
-      const label = ethers.id(agentName.toLowerCase());
-      const subnameNode = ethers.namehash(`${agentName.toLowerCase()}.${this.parentName}`);
+    if (!this.enabled) {
+      return { ensName, onChain: false };
+    }
 
-      // Register subnode
-      if (this.registry) {
-        const tx = await this.registry.setSubnodeRecord(
-          this.parentNode,
-          label,
-          ownerAddress || this.signer.address,
-          this.resolver?.target || ethers.ZeroAddress,
-          0
-        );
-        await tx.wait();
-        console.log(`  ENS: registered ${agentName}.${this.parentName}`);
-      }
+    // Validate owner address if provided
+    if (ownerAddress && !ethers.isAddress(ownerAddress)) {
+      return { ensName, onChain: false, error: 'Invalid owner address' };
+    }
 
-      // Set text records
-      if (this.resolver) {
-        const records = {
-          archetype: metadata.archetype || '',
-          description: metadata.description || `Agent in The Reef`,
-          url: metadata.url || '',
-        };
+    // Fire and forget — register in background, don't block the socket
+    this._registerAsync(safeName, ownerAddress, metadata).catch(err => {
+      console.error(`  ENS: background registration failed for ${safeName} — ${err.message}`);
+    });
 
-        for (const [key, value] of Object.entries(records)) {
-          if (value) {
-            const tx = await this.resolver.setText(subnameNode, key, value);
-            await tx.wait();
-          }
+    return { ensName, onChain: true };
+  }
+
+  async _registerAsync(safeName, ownerAddress, metadata) {
+    const subnameNode = ethers.namehash(`${safeName}.${this.parentName}`);
+    const label = ethers.id(safeName);
+
+    if (this.registry) {
+      const tx = await this.registry.setSubnodeRecord(
+        this.parentNode,
+        label,
+        ownerAddress || this.signer.address,
+        this.resolver?.target || ethers.ZeroAddress,
+        0
+      );
+      await tx.wait();
+      console.log(`  ENS: registered ${safeName}.${this.parentName}`);
+    }
+
+    if (this.resolver) {
+      const records = {
+        archetype: metadata.archetype || '',
+        description: metadata.description || 'Agent in The Reef',
+      };
+      for (const [key, value] of Object.entries(records)) {
+        if (value) {
+          const tx = await this.resolver.setText(subnameNode, key, value);
+          await tx.wait();
         }
-        console.log(`  ENS: set text records for ${agentName}.${this.parentName}`);
       }
-
-      return { ensName: `${agentName}.${this.parentName}`, onChain: true };
-    } catch (err) {
-      console.error(`  ENS: failed to register ${agentName} — ${err.message}`);
-      return { ensName: `${agentName}.${this.parentName}`, onChain: false, error: err.message };
+      console.log(`  ENS: set text records for ${safeName}.${this.parentName}`);
     }
   }
 
