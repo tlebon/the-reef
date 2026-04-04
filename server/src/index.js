@@ -58,7 +58,7 @@ app.get('/api/agents', (req, res) => {
 app.get('/api/agents/:id', (req, res) => {
   const agent = world.getAgent(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
-  res.json({ ...agent, ensName: ens.getSubname(agent.name) });
+  res.json({ ...agent, ensName: ens.enabled ? ens.getSubname(agent.name) : null });
 });
 
 app.get('/api/bounties', (req, res) => {
@@ -145,8 +145,10 @@ io.on('connection', (socket) => {
       socket.emit('agent:error', result);
     } else {
       socket.agentId = result.agent.id;
-      // Set ENS name before emitting so clients see it
-      result.agent.ensName = ens.getSubname(name);
+      // Only set ENS name if ENS is enabled (actually registered on-chain)
+      if (ens.enabled) {
+        result.agent.ensName = ens.getSubname(name);
+      }
 
       socket.emit('agent:registered', result);
       io.emit('world:agent_joined', { agent: result.agent, tile: result.tile });
