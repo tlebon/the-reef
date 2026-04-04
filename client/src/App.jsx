@@ -23,6 +23,8 @@ export default function App() {
   const [showJoin, setShowJoin] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('reef-agent-id'));
   const [latestBlock, setLatestBlock] = useState(null);
+  const [joining, setJoining] = useState(false);
+  const [completedQuest, setCompletedQuest] = useState(null);
 
   useEffect(() => {
     const s = io(SOCKET_URL);
@@ -80,6 +82,7 @@ export default function App() {
 
     s.on('agent:error', ({ error }) => {
       addActivity(`Error: ${error}`);
+      setJoining(false);
     });
 
     setSocket(s);
@@ -89,9 +92,6 @@ export default function App() {
   const addActivity = useCallback((msg) => {
     setActivities(prev => [...prev.slice(-99), { time: new Date(), msg }]);
   }, []);
-
-  const [joining, setJoining] = useState(false);
-  const [completedQuest, setCompletedQuest] = useState(null);
 
   const handleJoin = (name, archetype) => {
     if (!socket) return;

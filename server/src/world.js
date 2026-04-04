@@ -485,6 +485,7 @@ export class World {
 
     const name = args[0];
     if (/\s/.test(name)) return { error: 'Service name cannot contain spaces' };
+    if (agent.services.some(s => s.name === name)) return { error: `You already have a service called '${name}'` };
     const price = parseFloat(args[1]);
     if (!Number.isFinite(price) || price < 0 || price > 1000) return { error: 'Price must be a number between 0 and 1000' };
     const description = args.slice(2).join(' ');
@@ -682,7 +683,10 @@ export class World {
       }
     }
 
-    // Generate random quests periodically (every 5 ticks, max 10 active)
+    // Prune completed bounties older than 50 ticks
+    this.bounties = this.bounties.filter(b => !b.completed || (this.tick - (b.completedAt || 0)) < 50);
+
+    // Generate random quests periodically
     const activeQuests = this.bounties.filter(b => !b.completed && b.posterId === 'system');
     if (this.tick % 20 === 0 && activeQuests.length < 10 && this.agents.size > 0) {
       const quest = this._generateRandomQuest();
@@ -708,7 +712,7 @@ export class World {
       .replace('{x}', targetTile.x)
       .replace('{y}', targetTile.y);
 
-    const rewardBase = { deliver: 0.03, explore: 0.02, trade: 0.04, build: 0.025, collect: 0.015 };
+    const rewardBase = { trade: 0.04, collect: 0.015, scavenge: 0.01 };
     const reward = Math.round((rewardBase[template.type] || 0.02) * amount * 100) / 100;
 
     return {
