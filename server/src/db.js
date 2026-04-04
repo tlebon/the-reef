@@ -108,7 +108,6 @@ export function loadAgents() {
   const rows = db.prepare('SELECT * FROM agents').all();
   return rows.map(row => ({
     ...row,
-    built: undefined,
     inventory: JSON.parse(row.inventory),
     loot: JSON.parse(row.loot),
     services: JSON.parse(row.services),

@@ -17,7 +17,7 @@ import { seedWorld, tickNPCs, createAgentQuests } from './seed.js';
 import { checkQuests } from './quests.js';
 import { ENSManager } from './ens.js';
 import { PaymentManager } from './payments.js';
-import { initDB, saveWorldState, loadAgents, loadTiles, loadBounties, getWorldMeta, getAgentByWallet as dbGetAgentByWallet } from './db.js';
+import { initDB, saveWorldState, loadAgents, loadTiles, loadBounties, getWorldMeta } from './db.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -109,8 +109,8 @@ app.get('/api/services/:agentName/:serviceName',
     const service = agent?.services.find(s => s.name === req.params.serviceName);
     if (!agent || !service) return res.status(404).json({ error: 'Service not found' });
 
-    // Execute NPC service logic
-    const args = Object.values(req.query);
+    // Execute NPC service logic — sanitize query params (no spaces/special chars)
+    const args = Object.values(req.query).map(v => String(v).replace(/[^a-zA-Z0-9_-]/g, ''));
     const result = world.execute(agent.id, `INVOKE_SERVICE ${agent.name} ${service.name} ${args.join(' ')}`);
 
     res.json({
