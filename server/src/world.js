@@ -114,6 +114,12 @@ export class World {
     if (!ARCHETYPES[archetype]) {
       return { error: `Unknown archetype: ${archetype}. Choose: ${Object.keys(ARCHETYPES).join(', ')}` };
     }
+    if (!name || name.length < 1 || name.length > 20) {
+      return { error: 'Name must be 1-20 characters' };
+    }
+    if (/\s/.test(name)) {
+      return { error: 'Name cannot contain spaces' };
+    }
     if ([...this.agents.values()].some(a => a.name.toLowerCase() === name.toLowerCase())) {
       return { error: `Name '${name}' is already taken` };
     }
@@ -710,6 +716,8 @@ export class World {
       reward,
       description: desc,
       questType: template.type,
+      target: amount,
+      resource,
       claimed: false,
       claimedBy: null,
       completed: false,
@@ -748,7 +756,13 @@ export class World {
   // ── Persistence ────────────────────────────────────────────────────
 
   save(path) {
-    const data = JSON.stringify(this.getState(), null, 2);
+    const data = JSON.stringify({
+      tick: this.tick,
+      tiles: Object.fromEntries(this.tiles),
+      agents: Object.fromEntries(this.agents), // full agent data including internal fields
+      bounties: this.bounties,
+      messages: this.messages.slice(-20),
+    }, null, 2);
     fs.writeFile(path, data, (err) => {
       if (err) console.error('  World: save failed —', err.message);
     });
