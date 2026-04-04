@@ -121,9 +121,16 @@ export class ENSManager {
       await tx.wait();
       console.log(`  ENS: registered ${safeName}.${this.parentName}`);
 
-      // Set text records while we're still the owner (best effort)
+      // Set address + text records while we're still the owner (best effort)
       if (this.resolver) {
         try {
+          // Set address resolution so the name resolves to the owner's wallet
+          if (ownerAddress) {
+            const atx = await this.resolver.setAddr(subnameNode, ownerAddress);
+            await atx.wait();
+            console.log(`  ENS: set addr for ${safeName}.${this.parentName} → ${ownerAddress.slice(0, 10)}...`);
+          }
+
           const records = {
             archetype: metadata.archetype || '',
             description: metadata.description || 'Agent in The Reef',
