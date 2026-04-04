@@ -400,6 +400,8 @@ export class World {
     // Both get reputation for trading
     agent.reputation.transactions++;
     target.reputation.transactions++;
+    agent.tradeCount = (agent.tradeCount || 0) + 1;
+    target.tradeCount = (target.tradeCount || 0) + 1;
 
     this._log(`${agent.name} traded ${giveAmt} ${giveRes} for ${wantAmt} ${wantRes} with ${target.name}`);
     return { ok: true, message: `Traded ${giveAmt} ${giveRes} for ${wantAmt} ${wantRes} with ${targetName}` };

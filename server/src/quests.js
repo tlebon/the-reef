@@ -12,7 +12,7 @@ const QUEST_CRITERIA = {
     // Count tiles visited (tracked via loot/scavenge visits, approximate with tiles known)
     return (agent.tilesVisited || 0) >= (quest.target || 3);
   },
-  trade: (agent, quest) => agent.reputation.transactions >= (quest.target || 1),
+  trade: (agent, quest) => (agent.tradeCount || 0) >= (quest.target || 1),
   collect: (agent, quest) => (agent.inventory[quest.resource] || 0) >= (quest.target || 5),
   register_service: (agent) => agent.services.length >= 1,
   invoke_service: (agent, quest) => (agent.servicesInvoked || 0) >= (quest.target || 1),
