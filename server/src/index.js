@@ -5,13 +5,19 @@
  * processes agent actions, and broadcasts state updates.
  */
 
+import crypto from 'crypto';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { World } from './world.js';
 import { ChainConnector } from './chain.js';
-import { seedWorld, tickNPCs } from './seed.js';
+import { seedWorld, tickNPCs, createAgentQuests } from './seed.js';
+import { checkQuests } from './quests.js';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SAVE_PATH = join(__dirname, '..', 'world-state.json');
 const PORT = process.env.PORT || 3001;
 const TICK_INTERVAL = parseInt(process.env.TICK_INTERVAL) || 12_000;
 
@@ -73,13 +79,23 @@ io.on('connection', (socket) => {
   socket.emit('world:state', world.getState());
 
   // Agent registration
-  socket.on('agent:register', async ({ id, name, archetype, walletAddress }) => {
+  socket.on('agent:register', async ({ name, archetype, walletAddress }) => {
+    const id = `agent-${crypto.randomUUID()}`;
     const result = world.addAgent(id, name, archetype);
     if (result.error) {
       socket.emit('agent:error', result);
     } else {
       socket.emit('agent:registered', result);
       io.emit('world:agent_joined', { agent: result.agent, tile: result.tile });
+
+      // Create per-agent starter quests
+      createAgentQuests(world, result.agent);
+
+      // Check quests on join (triggers "arrive" quest)
+      const completed = checkQuests(world, result.agent);
+      if (completed.length > 0) {
+        socket.emit('quest:completed', completed);
+      }
 
       // Register on-chain if wallet address provided
       if (walletAddress) {
@@ -93,8 +109,15 @@ io.on('connection', (socket) => {
     const result = world.execute(agentId, command);
     socket.emit('agent:result', { command, result });
 
-    // Broadcast state update if the command changed something
+    // Check quest completion after every action
     if (result.ok) {
+      const agent = world.getAgent(agentId);
+      if (agent) {
+        const completed = checkQuests(world, agent);
+        if (completed.length > 0) {
+          socket.emit('quest:completed', completed);
+        }
+      }
       io.emit('world:update', world.getState());
     }
   });
@@ -112,25 +135,43 @@ io.on('connection', (socket) => {
 
 // ── Tick Loop ────────────────────────────────────────────────────────
 
-setInterval(async () => {
+function processTick(blockNumber) {
   world.advanceTick();
   tickNPCs(world);
   const state = world.getState();
   const hash = world.getStateHash();
 
-  io.emit('world:tick', { tick: world.tick, hash, state });
+  io.emit('world:tick', { tick: world.tick, block: blockNumber || null, hash, state });
 
-  // Commit state hash on-chain
-  await chain.commitTick(world.tick, hash);
+  // Commit state hash on-chain (fire and forget)
+  chain.commitTick(world.tick, hash).catch(() => {});
 
-  console.log(`Tick ${world.tick} | ${world.agents.size} agents | ${world.tiles.size} tiles | hash: ${hash.slice(0, 16)}...`);
-}, TICK_INTERVAL);
+  // Persist world state
+  world.save(SAVE_PATH);
+
+  const src = blockNumber ? `block #${blockNumber}` : 'interval';
+  console.log(`Tick ${world.tick} (${src}) | ${world.agents.size} agents | ${world.tiles.size} tiles | hash: ${hash.slice(0, 16)}...`);
+}
 
 // ── Start ────────────────────────────────────────────────────────────
 
 async function start() {
   await chain.init();
-  seedWorld(world);
+
+  // Load saved state or seed fresh
+  const loaded = world.load(SAVE_PATH);
+  if (!loaded) {
+    seedWorld(world);
+  }
+
+  // Sync ticks to blocks if chain is connected, otherwise use interval
+  const blockSync = chain.onNewBlock((blockNumber) => {
+    processTick(blockNumber);
+  });
+
+  if (!blockSync) {
+    setInterval(() => processTick(null), TICK_INTERVAL);
+  }
 
   httpServer.listen(PORT, () => {
     console.log(`
@@ -139,7 +180,7 @@ async function start() {
   │                                     │
   │  REST API:    http://localhost:${PORT} │
   │  WebSocket:   ws://localhost:${PORT}   │
-  │  Tick interval: ${TICK_INTERVAL / 1000}s               │
+  │  Ticks: ${blockSync ? 'synced to blocks' : `${TICK_INTERVAL / 1000}s interval`}          │
   │  Chain: ${chain.enabled ? 'connected' : 'local-only'}             │
   └─────────────────────────────────────┘
     `);

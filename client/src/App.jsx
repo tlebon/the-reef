@@ -3,6 +3,11 @@ import { io } from 'socket.io-client';
 import WorldGrid from './WorldGrid.jsx';
 import ActivityFeed from './ActivityFeed.jsx';
 import AgentPanel from './AgentPanel.jsx';
+import TilePanel from './TilePanel.jsx';
+import BountyPanel from './BountyPanel.jsx';
+import JoinPanel from './JoinPanel.jsx';
+import Welcome from './Welcome.jsx';
+import ActionBar from './ActionBar.jsx';
 
 const SOCKET_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3001'
@@ -13,6 +18,13 @@ export default function App() {
   const [worldState, setWorldState] = useState(null);
   const [activities, setActivities] = useState([]);
   const [selectedAgent, setSelectedAgent] = useState(null);
+  const [selectedTile, setSelectedTile] = useState(null);
+  const [myAgentId, setMyAgentId] = useState(() => localStorage.getItem('reef-agent-id'));
+  const [showJoin, setShowJoin] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('reef-agent-id'));
+  const [latestBlock, setLatestBlock] = useState(null);
+  const [joining, setJoining] = useState(false);
+  const [completedQuest, setCompletedQuest] = useState(null);
 
   useEffect(() => {
     const s = io(SOCKET_URL);
@@ -23,19 +35,54 @@ export default function App() {
 
     s.on('world:state', (state) => {
       setWorldState(state);
+      // Clear stale agent ID if agent no longer exists on server
+      const savedId = localStorage.getItem('reef-agent-id');
+      if (savedId && !state.agents[savedId]) {
+        localStorage.removeItem('reef-agent-id');
+        setMyAgentId(null);
+        setShowWelcome(true);
+      }
     });
 
     s.on('world:update', (state) => {
       setWorldState(state);
     });
 
-    s.on('world:tick', ({ tick, hash, state }) => {
+    s.on('world:tick', ({ tick, block, hash, state }) => {
       setWorldState(state);
-      addActivity(`Tick ${tick} — ${Object.keys(state.agents).length} agents, ${Object.keys(state.tiles).length} tiles — ${hash.slice(0, 12)}...`);
+      setLatestBlock(block);
+      addActivity(`Tick ${tick}${block ? ` (block #${block})` : ''} — ${Object.keys(state.agents).length} agents, ${Object.keys(state.tiles).length} tiles`);
     });
 
     s.on('world:agent_joined', ({ agent }) => {
-      addActivity(`${agent.name} (${agent.archetype}) joined The Reef at (${agent.x},${agent.y})`);
+      addActivity(`${agent.name} (${agent.archetype}) joined The Reef`);
+    });
+
+    s.on('agent:registered', ({ agent }) => {
+      setMyAgentId(agent.id);
+      localStorage.setItem('reef-agent-id', agent.id);
+      setShowJoin(false);
+      addActivity(`You joined as ${agent.name}!`);
+    });
+
+    s.on('quest:completed', (quests) => {
+      for (const q of quests) {
+        addActivity(`Quest complete: "${q.description}" — +${q.reward} USDC!`);
+      }
+      setCompletedQuest(quests[0]);
+    });
+
+    s.on('agent:result', ({ command, result }) => {
+      if (result.error) {
+        addActivity(`Error: ${result.error}`);
+      } else if (result.message) {
+        addActivity(result.message);
+      }
+    });
+
+    s.on('agent:error', ({ error }) => {
+      addActivity(`Error: ${error}`);
+      setJoining(false);
     });
 
     setSocket(s);
@@ -46,6 +93,19 @@ export default function App() {
     setActivities(prev => [...prev.slice(-99), { time: new Date(), msg }]);
   }, []);
 
+  const handleJoin = (name, archetype) => {
+    if (!socket) return;
+    setJoining(true);
+    addActivity(`Joining as ${name} (${archetype})...`);
+    socket.emit('agent:register', { name, archetype });
+  };
+
+  const handleCommand = (command) => {
+    if (!socket || !myAgentId) return;
+    addActivity(`> ${command}`);
+    socket.emit('agent:command', { agentId: myAgentId, command });
+  };
+
   if (!worldState) {
     return (
       <div style={styles.loading}>
@@ -54,8 +114,13 @@ export default function App() {
     );
   }
 
+  if (showWelcome && !myAgentId) {
+    return <Welcome onEnter={() => { setShowWelcome(false); setShowJoin(true); }} />;
+  }
+
   const agents = Object.values(worldState.agents || {});
   const tiles = worldState.tiles || {};
+  const bounties = worldState.bounties || [];
 
   return (
     <div style={styles.container}>
@@ -63,50 +128,105 @@ export default function App() {
         <h1 style={styles.title}>The Reef</h1>
         <div style={styles.stats}>
           <span>Tick: {worldState.tick}</span>
+          {latestBlock && <span>Block: #{latestBlock}</span>}
           <span>Agents: {agents.length}</span>
           <span>Tiles: {Object.keys(tiles).length}</span>
         </div>
+        {!myAgentId && !showJoin && (
+          <button style={styles.joinBtn} onClick={() => setShowJoin(true)}>Join The Reef</button>
+        )}
+        {myAgentId && (
+          <span style={styles.myAgent}>You: {worldState.agents[myAgentId]?.name || myAgentId}</span>
+        )}
       </header>
 
+      {completedQuest && (
+        <div style={styles.modal}>
+          <div style={styles.modalContent}>
+            <h3 style={styles.modalTitle}>Quest Complete!</h3>
+            <p style={styles.modalDesc}>{completedQuest.description}</p>
+            <p style={styles.modalReward}>+{completedQuest.reward} USDC</p>
+            <button style={styles.modalBtn} onClick={() => setCompletedQuest(null)}>Continue</button>
+          </div>
+        </div>
+      )}
+
+      <div style={styles.mainWrapper}>
       <div style={styles.main}>
         <div style={styles.gridContainer}>
           <WorldGrid
             tiles={tiles}
             agents={agents}
-            onSelectAgent={setSelectedAgent}
+            onSelectAgent={(a) => { setSelectedAgent(a); setSelectedTile(null); }}
+            onSelectTile={(t) => { setSelectedTile(t); setSelectedAgent(null); }}
+            myAgentId={myAgentId}
           />
         </div>
 
         <div style={styles.sidebar}>
-          {selectedAgent ? (
+          {showJoin && !myAgentId && (
+            <JoinPanel onJoin={handleJoin} onCancel={() => setShowJoin(false)} />
+          )}
+
+          {selectedAgent && (
             <AgentPanel
               agent={selectedAgent}
               onClose={() => setSelectedAgent(null)}
             />
-          ) : (
-            <div style={styles.panel}>
-              <h3 style={styles.panelTitle}>Agents</h3>
-              {agents.length === 0 ? (
-                <p style={styles.muted}>No agents yet. Waiting for connections...</p>
-              ) : (
-                agents.map(a => (
-                  <div
-                    key={a.id}
-                    style={styles.agentItem}
-                    onClick={() => setSelectedAgent(a)}
-                  >
-                    <span style={styles.archetypeBadge}>{a.archetype}</span>
-                    <span>{a.name}</span>
-                    <span style={styles.muted}>({a.x},{a.y})</span>
-                  </div>
-                ))
-              )}
-            </div>
+          )}
+
+          {selectedTile && !selectedAgent && (
+            <TilePanel
+              tile={selectedTile}
+              agents={agents}
+              myAgentId={myAgentId}
+              onCommand={handleCommand}
+              onClose={() => setSelectedTile(null)}
+            />
+          )}
+
+          {!selectedAgent && !selectedTile && !showJoin && (
+            <>
+              <BountyPanel bounties={bounties} myAgentId={myAgentId} onCommand={handleCommand} />
+              <div style={styles.panel}>
+                <h3 style={styles.panelTitle}>Agents</h3>
+                {agents.length === 0 ? (
+                  <p style={styles.muted}>No agents yet.</p>
+                ) : (
+                  agents.map(a => (
+                    <div
+                      key={a.id}
+                      style={styles.agentItem}
+                      onClick={() => setSelectedAgent(a)}
+                    >
+                      <span style={{
+                        ...styles.archetypeBadge,
+                        color: { builder: '#ff6b6b', merchant: '#fdcb6e', scout: '#00b894', crafter: '#a29bfe' }[a.archetype] || '#00d4aa',
+                      }}>{a.archetype}</span>
+                      <span>{a.name}</span>
+                      {a.id === myAgentId && <span style={styles.youBadge}>you</span>}
+                      <span style={styles.muted}>({a.x},{a.y})</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
           )}
 
           <ActivityFeed activities={activities} />
         </div>
       </div>
+      </div>
+
+      {myAgentId && worldState.agents[myAgentId] && (
+        <ActionBar
+          agent={worldState.agents[myAgentId]}
+          currentTile={tiles[`${worldState.agents[myAgentId].x},${worldState.agents[myAgentId].y}`]}
+          messages={worldState.messages}
+          agents={agents}
+          onCommand={handleCommand}
+        />
+      )}
     </div>
   );
 }
@@ -147,6 +267,12 @@ const styles = {
     fontSize: '0.85rem',
     color: '#5f6d7e',
   },
+  mainWrapper: {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+    overflow: 'hidden',
+  },
   main: {
     display: 'flex',
     flex: 1,
@@ -158,11 +284,14 @@ const styles = {
     padding: '20px',
   },
   sidebar: {
-    width: '320px',
+    width: '340px',
     borderLeft: '1px solid #1a2035',
     display: 'flex',
     flexDirection: 'column',
-    overflow: 'hidden',
+    overflowY: 'auto',
+    zIndex: 20,
+    background: '#0a0e17',
+    position: 'relative',
   },
   panel: {
     padding: '16px',
@@ -193,5 +322,72 @@ const styles = {
   muted: {
     color: '#3d4a5c',
     fontSize: '0.8rem',
+  },
+  youBadge: {
+    background: '#00d4aa',
+    color: '#0a0e17',
+    padding: '1px 5px',
+    borderRadius: '3px',
+    fontSize: '0.65rem',
+    fontWeight: 700,
+  },
+  joinBtn: {
+    background: '#00d4aa',
+    color: '#0a0e17',
+    border: 'none',
+    padding: '8px 16px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    fontSize: '0.85rem',
+  },
+  myAgent: {
+    color: '#00d4aa',
+    fontSize: '0.85rem',
+  },
+  modal: {
+    position: 'fixed',
+    top: 0, left: 0, right: 0, bottom: 0,
+    background: 'rgba(0,0,0,0.7)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  modalContent: {
+    background: '#0d1220',
+    border: '1px solid #00d4aa',
+    borderRadius: '8px',
+    padding: '32px',
+    textAlign: 'center',
+    maxWidth: '360px',
+  },
+  modalTitle: {
+    color: '#00d4aa',
+    fontSize: '1.2rem',
+    marginBottom: '12px',
+  },
+  modalDesc: {
+    color: '#c8d6e5',
+    fontSize: '0.9rem',
+    marginBottom: '8px',
+  },
+  modalReward: {
+    color: '#fdcb6e',
+    fontSize: '1.1rem',
+    fontWeight: 700,
+    marginBottom: '20px',
+  },
+  modalBtn: {
+    background: '#00d4aa',
+    color: '#0a0e17',
+    border: 'none',
+    padding: '10px 32px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    fontSize: '0.9rem',
   },
 };

@@ -27,11 +27,10 @@ export default function ActivityFeed({ activities }) {
 
 const styles = {
   container: {
-    flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    overflow: 'hidden',
     padding: '16px',
+    borderBottom: '1px solid #1a2035',
   },
   title: {
     fontSize: '0.9rem',
@@ -41,7 +40,7 @@ const styles = {
     letterSpacing: '1px',
   },
   feed: {
-    flex: 1,
+    maxHeight: '200px',
     overflow: 'auto',
     fontSize: '0.75rem',
   },

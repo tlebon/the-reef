@@ -1,4 +1,5 @@
 node_modules/
+server/world-state.json
 dist/
 .env
 *.log

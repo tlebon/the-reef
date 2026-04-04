@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useRef, useCallback } from 'react';
 
 const TILE_SIZE = 40;
 const RESOURCE_COLORS = {
@@ -14,7 +14,7 @@ const ARCHETYPE_COLORS = {
   crafter:  '#a29bfe',
 };
 
-export default function WorldGrid({ tiles, agents, onSelectAgent }) {
+export default function WorldGrid({ tiles, agents, onSelectAgent, onSelectTile, myAgentId }) {
   // Compute grid bounds from tiles
   const bounds = useMemo(() => {
     const coords = Object.values(tiles).map(t => ({ x: t.x, y: t.y }));
@@ -39,13 +39,53 @@ export default function WorldGrid({ tiles, agents, onSelectAgent }) {
   const width = (bounds.maxX - bounds.minX + 1) * TILE_SIZE;
   const height = (bounds.maxY - bounds.minY + 1) * TILE_SIZE;
 
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragging = useRef(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+  const panStart = useRef({ x: 0, y: 0 });
+
+  const handleWheel = useCallback((e) => {
+    e.preventDefault();
+    setZoom(z => Math.max(0.3, Math.min(3, z - e.deltaY * 0.001)));
+  }, []);
+
+  const handleMouseDown = useCallback((e) => {
+    if (e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey)) {
+      dragging.current = true;
+      dragStart.current = { x: e.clientX, y: e.clientY };
+      panStart.current = { ...pan };
+      e.preventDefault();
+    }
+  }, [pan]);
+
+  const handleMouseMove = useCallback((e) => {
+    if (!dragging.current) return;
+    setPan({
+      x: panStart.current.x + (e.clientX - dragStart.current.x),
+      y: panStart.current.y + (e.clientY - dragStart.current.y),
+    });
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    dragging.current = false;
+  }, []);
+
   return (
-    <div style={styles.wrapper}>
+    <div
+      style={styles.wrapper}
+      onWheel={handleWheel}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onContextMenu={e => e.preventDefault()}
+    >
       <svg
         width={width}
         height={height}
         viewBox={`${bounds.minX * TILE_SIZE} ${bounds.minY * TILE_SIZE} ${width} ${height}`}
-        style={styles.svg}
+        style={{ ...styles.svg, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'center' }}
       >
         {/* Render tiles */}
         {Object.values(tiles).map(tile => {
@@ -54,8 +94,10 @@ export default function WorldGrid({ tiles, agents, onSelectAgent }) {
           const px = tile.x * TILE_SIZE;
           const py = tile.y * TILE_SIZE;
 
+          const isMyAgent = agent && agent.id === myAgentId;
+
           return (
-            <g key={key}>
+            <g key={key} onClick={() => agent ? onSelectAgent(agent) : onSelectTile(tile)} style={{ cursor: 'pointer' }}>
               {/* Tile background */}
               <rect
                 x={px + 1}
@@ -63,8 +105,8 @@ export default function WorldGrid({ tiles, agents, onSelectAgent }) {
                 width={TILE_SIZE - 2}
                 height={TILE_SIZE - 2}
                 fill={tile.built ? RESOURCE_COLORS[tile.resource] + '40' : '#0f1623'}
-                stroke={tile.built ? RESOURCE_COLORS[tile.resource] + '80' : '#1a2035'}
-                strokeWidth={1}
+                stroke={isMyAgent ? '#00d4aa' : tile.built ? RESOURCE_COLORS[tile.resource] + '80' : '#1a2035'}
+                strokeWidth={isMyAgent ? 2 : 1}
                 rx={2}
               />
 
@@ -78,8 +120,8 @@ export default function WorldGrid({ tiles, agents, onSelectAgent }) {
                 />
               )}
 
-              {/* Built symbol */}
-              {tile.built && !agent && (
+              {/* Built symbol — always show */}
+              {tile.built && (
                 <text
                   x={px + TILE_SIZE / 2}
                   y={py + TILE_SIZE / 2 + 1}
@@ -93,26 +135,24 @@ export default function WorldGrid({ tiles, agents, onSelectAgent }) {
                 </text>
               )}
 
-              {/* Agent */}
+              {/* Agent — small indicator in top-right corner */}
               {agent && (
-                <g
-                  onClick={() => onSelectAgent(agent)}
-                  style={{ cursor: 'pointer' }}
-                >
+                <g>
                   <circle
-                    cx={px + TILE_SIZE / 2}
-                    cy={py + TILE_SIZE / 2}
-                    r={TILE_SIZE / 3}
+                    cx={px + TILE_SIZE - 8}
+                    cy={py + 8}
+                    r={6}
                     fill={ARCHETYPE_COLORS[agent.archetype]}
-                    opacity={0.9}
+                    stroke={isMyAgent ? '#00d4aa' : '#0a0e17'}
+                    strokeWidth={1.5}
                   />
                   <text
-                    x={px + TILE_SIZE / 2}
-                    y={py + TILE_SIZE / 2 + 1}
+                    x={px + TILE_SIZE - 8}
+                    y={py + 9}
                     textAnchor="middle"
                     dominantBaseline="middle"
                     fill="#0a0e17"
-                    fontSize="11"
+                    fontSize="7"
                     fontWeight="bold"
                     fontFamily="monospace"
                   >
@@ -158,6 +198,7 @@ export default function WorldGrid({ tiles, agents, onSelectAgent }) {
           return voidCells;
         })()}
       </svg>
+      <div style={styles.hint}>scroll to zoom · alt+drag to pan · WASD to move</div>
     </div>
   );
 }
@@ -168,6 +209,16 @@ const styles = {
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: '100%',
+    position: 'relative',
+  },
+  hint: {
+    position: 'absolute',
+    bottom: '8px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    fontSize: '0.65rem',
+    color: '#2d3748',
+    pointerEvents: 'none',
   },
   svg: {
     background: '#060810',

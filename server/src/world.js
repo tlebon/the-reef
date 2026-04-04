@@ -6,8 +6,29 @@
  */
 
 import crypto from 'crypto';
+import fs from 'fs';
 
 const RESOURCES = ['coral', 'crystal', 'kelp', 'shell'];
+
+const RARITY_TABLE = [
+  { rarity: 'common',    chance: 0.50, color: '#8892a4' },
+  { rarity: 'uncommon',  chance: 0.08, color: '#00b894' },
+  { rarity: 'rare',      chance: 0.005, color: '#a29bfe' },
+  { rarity: 'legendary', chance: 0.001, color: '#fdcb6e' },
+];
+
+const LOOT_NAMES = {
+  coral:   ['Coral Shard', 'Reef Fragment', 'Polyp Bloom', 'Abyssal Coral'],
+  crystal: ['Crystal Splinter', 'Prism Dust', 'Geode Heart', 'Void Crystal'],
+  kelp:    ['Kelp Strand', 'Sea Vine', 'Drift Seed', 'Leviathan Kelp'],
+  shell:   ['Shell Chip', 'Nautilus Ring', 'Conch Echo', 'Ancient Shell'],
+};
+
+const RANDOM_QUEST_TEMPLATES = [
+  { desc: 'Trade with {amount} different agents', type: 'trade' },
+  { desc: 'Collect {amount} {resource}', type: 'collect' },
+  { desc: 'Scavenge {amount} times', type: 'scavenge' },
+];
 
 const ARCHETYPES = {
   builder:  { affinity: 'coral',   buildCost: 2, moveCost: 1, description: 'Efficient construction, structural bonuses' },
@@ -93,6 +114,15 @@ export class World {
     if (!ARCHETYPES[archetype]) {
       return { error: `Unknown archetype: ${archetype}. Choose: ${Object.keys(ARCHETYPES).join(', ')}` };
     }
+    if (!name || name.length < 1 || name.length > 20) {
+      return { error: 'Name must be 1-20 characters' };
+    }
+    if (/\s/.test(name)) {
+      return { error: 'Name cannot contain spaces' };
+    }
+    if ([...this.agents.values()].some(a => a.name.toLowerCase() === name.toLowerCase())) {
+      return { error: `Name '${name}' is already taken` };
+    }
 
     // Spawn at random frontier tile, or origin if no frontier
     const frontier = this._getFrontierTiles();
@@ -148,7 +178,10 @@ export class World {
       case 'SAY':       return this._cmdSay(agent, parts.slice(1).join(' '));
       case 'BUILD':     return this._cmdBuild(agent, args[0]);
       case 'TRADE':     return this._cmdTrade(agent, args);
+      case 'SCAVENGE':  return this._cmdScavenge(agent);
+      case 'REST':      return this._cmdRest(agent, args[0]);
       case 'REGISTER_SERVICE': return this._cmdRegisterService(agent, args);
+      case 'REMOVE_SERVICE':   return this._cmdRemoveService(agent, args);
       case 'INVOKE_SERVICE':   return this._cmdInvokeService(agent, args);
       case 'POST_BOUNTY':      return this._cmdPostBounty(agent, args);
       case 'CLAIM_BOUNTY':     return this._cmdClaimBounty(agent, args);
@@ -207,7 +240,6 @@ export class World {
         energy: agent.energy,
         inventory: agent.inventory,
         tilesOwned: agent.tilesOwned,
-        buildCap: this._buildCap(agent),
         reputation: { transactions: agent.reputation.transactions, avgRating: this._avgRating(agent) },
       },
       tiles: visibleTiles,
@@ -216,6 +248,29 @@ export class World {
       bounties: nearbyBounties,
       tick: this.tick,
     };
+  }
+
+  _rollLoot(tile) {
+    const names = LOOT_NAMES[tile.resource] || LOOT_NAMES.coral;
+    const items = [];
+
+    // Roll each tier independently — you always get a chance at each
+    for (let i = 0; i < RARITY_TABLE.length; i++) {
+      const tier = RARITY_TABLE[i];
+      if (Math.random() < tier.chance) {
+        items.push({
+          id: crypto.randomUUID(),
+          name: names[i],
+          rarity: tier.rarity,
+          color: tier.color,
+          resource: tile.resource,
+          foundAt: { x: tile.x, y: tile.y },
+          foundTick: this.tick,
+        });
+      }
+    }
+
+    return items;
   }
 
   _cmdMove(agent, direction) {
@@ -235,22 +290,19 @@ export class World {
     const tile = this.getTile(nx, ny);
     if (!tile) return { error: `Can't move ${direction} — unexplored void` };
 
-    // Check for collision
-    for (const a of this.agents.values()) {
-      if (a.id !== agent.id && a.x === nx && a.y === ny) {
-        return { error: `Can't move ${direction} — ${a.name} is there` };
-      }
-    }
-
     agent.energy -= cost;
     agent.x = nx;
     agent.y = ny;
+
+    const result = { ok: true, message: `Moved ${direction} to (${nx},${ny})`, energy: agent.energy };
+
     this._log(`${agent.name} moved ${direction} to (${nx},${ny})`);
-    return { ok: true, message: `Moved ${direction} to (${nx},${ny})`, energy: agent.energy };
+    return result;
   }
 
   _cmdSay(agent, text) {
     if (!text) return { error: 'Usage: SAY <message>' };
+    if (text.length > 200) text = text.slice(0, 200);
 
     const msg = { from: agent.name, x: agent.x, y: agent.y, text, tick: this.tick };
     this.messages.push(msg);
@@ -260,43 +312,69 @@ export class World {
     return { ok: true, message: `You said: "${text}"` };
   }
 
+  // Resource costs to mint a tile, based on the tile's resource type.
+  // You need a mix of resources you may not have — forcing trade.
+  static TILE_MINT_COSTS = {
+    coral:   { coral: 3, crystal: 2, kelp: 0, shell: 1 },
+    crystal: { coral: 1, crystal: 3, kelp: 2, shell: 0 },
+    kelp:    { coral: 0, crystal: 1, kelp: 3, shell: 2 },
+    shell:   { coral: 2, crystal: 0, kelp: 1, shell: 3 },
+  };
+
   _cmdBuild(agent, symbol) {
     const tile = this.getTile(agent.x, agent.y);
     if (!tile) return { error: 'No tile here' };
 
-    if (tile.built && tile.owner !== agent.id) {
-      return { error: `This tile is owned by another agent` };
+    if (tile.built) {
+      return { error: tile.owner === agent.id ? 'You already built here' : 'This tile is owned by another agent' };
     }
 
-    if (!tile.built && agent.tilesOwned >= this._buildCap(agent)) {
-      return { error: `Build cap reached (${this._buildCap(agent)}). Earn more reputation to build more.` };
+    // First tile is free
+    const isFirstTile = agent.tilesOwned === 0;
+
+    // Check energy first so resources aren't lost on failure
+    const energyCost = ARCHETYPES[agent.archetype].buildCost;
+    if (agent.energy < energyCost) return { error: `Not enough energy (need ${energyCost}, have ${agent.energy})` };
+
+    if (!isFirstTile) {
+      // Check resource costs
+      const costs = World.TILE_MINT_COSTS[tile.resource] || {};
+      const missing = [];
+      for (const [res, amount] of Object.entries(costs)) {
+        if (amount > 0 && (agent.inventory[res] || 0) < amount) {
+          missing.push(`${amount} ${res} (have ${agent.inventory[res] || 0})`);
+        }
+      }
+      if (missing.length > 0) {
+        return { error: `Need resources to mint this ${tile.resource} tile: ${missing.join(', ')}` };
+      }
+
+      // Deduct resources (safe — energy and resources both verified)
+      for (const [res, amount] of Object.entries(costs)) {
+        if (amount > 0) {
+          agent.inventory[res] -= amount;
+        }
+      }
     }
 
-    const cost = ARCHETYPES[agent.archetype].buildCost;
-    if (agent.energy < cost) return { error: `Not enough energy (need ${cost}, have ${agent.energy})` };
-
-    agent.energy -= cost;
-
-    const wasNewBuild = !tile.built;
+    agent.energy -= energyCost;
     tile.built = true;
     tile.owner = agent.id;
     tile.symbol = symbol || '#';
+    agent.tilesOwned++;
 
-    if (wasNewBuild) {
-      agent.tilesOwned++;
-      // Reveal neighbors
-      const revealed = this._revealNeighbors(agent.x, agent.y);
-      this._log(`${agent.name} built '${tile.symbol}' at (${agent.x},${agent.y}), revealed ${revealed.length} new tiles`);
-      return {
-        ok: true,
-        message: `Built '${tile.symbol}' at (${agent.x},${agent.y})`,
-        revealed: revealed.map(t => ({ x: t.x, y: t.y, resource: t.resource })),
-        energy: agent.energy,
-      };
-    }
-
-    this._log(`${agent.name} rebuilt '${tile.symbol}' at (${agent.x},${agent.y})`);
-    return { ok: true, message: `Rebuilt '${tile.symbol}' at (${agent.x},${agent.y})`, energy: agent.energy };
+    const revealed = this._revealNeighbors(agent.x, agent.y);
+    const msg = isFirstTile
+      ? `Claimed home tile at (${agent.x},${agent.y})`
+      : `Minted ${tile.resource} tile at (${agent.x},${agent.y})`;
+    this._log(`${agent.name} ${msg}, revealed ${revealed.length} new tiles`);
+    return {
+      ok: true,
+      message: msg,
+      revealed: revealed.map(t => ({ x: t.x, y: t.y, resource: t.resource })),
+      energy: agent.energy,
+      isHome: isFirstTile,
+    };
   }
 
   _cmdTrade(agent, args) {
@@ -331,9 +409,72 @@ export class World {
     // Both get reputation for trading
     agent.reputation.transactions++;
     target.reputation.transactions++;
+    agent.tradeCount = (agent.tradeCount || 0) + 1;
+    target.tradeCount = (target.tradeCount || 0) + 1;
 
     this._log(`${agent.name} traded ${giveAmt} ${giveRes} for ${wantAmt} ${wantRes} with ${target.name}`);
     return { ok: true, message: `Traded ${giveAmt} ${giveRes} for ${wantAmt} ${wantRes} with ${targetName}` };
+  }
+
+  _cmdRest(agent, resource) {
+    if (!resource) return { error: 'Usage: REST <resource> — consume 3 of a resource for +8 energy' };
+    resource = resource.toLowerCase();
+    if (!RESOURCES.includes(resource)) return { error: `Unknown resource: ${resource}. Options: ${RESOURCES.join(', ')}` };
+    if ((agent.inventory[resource] || 0) < 3) return { error: `Need 3 ${resource} (have ${agent.inventory[resource] || 0})` };
+    agent.inventory[resource] -= 3;
+    agent.energy += 8; // No cap — REST can push above MAX_ENERGY
+    this._log(`${agent.name} rested, consumed 3 ${resource} for energy`);
+    return { ok: true, message: `Consumed 3 ${resource} — energy now ${agent.energy}/${MAX_ENERGY}`, energy: agent.energy };
+  }
+
+  _cmdScavenge(agent) {
+    const SCAVENGE_COST = 2;
+    if (agent.energy < SCAVENGE_COST) return { error: `Not enough energy (need ${SCAVENGE_COST}, have ${agent.energy})` };
+
+    const tile = this.getTile(agent.x, agent.y);
+    if (!tile) return { error: 'Nothing to scavenge here' };
+
+    agent.energy -= SCAVENGE_COST;
+    agent.scavengeCount = (agent.scavengeCount || 0) + 1;
+
+    // 40% chance to find nothing — scavenging is risky
+    if (Math.random() < 0.4) {
+      this._log(`${agent.name} scavenged at (${agent.x},${agent.y}) — found nothing`);
+      return { ok: true, message: 'Scavenged... found nothing this time.', energy: agent.energy };
+    }
+
+    // Tile owner gets a cut of resources found
+    const tileOwner = tile.owner ? this.agents.get(tile.owner) : null;
+
+    // Get some of the tile's resource
+    const baseAmount = tile.resource === ARCHETYPES[agent.archetype]?.affinity ? 3 : 1;
+    agent.inventory[tile.resource] = (agent.inventory[tile.resource] || 0) + baseAmount;
+
+    // Owner gets a portion if someone else scavenges their tile
+    if (tileOwner && tileOwner.id !== agent.id) {
+      tileOwner.inventory[tile.resource] = (tileOwner.inventory[tile.resource] || 0) + 1;
+    }
+
+    // Roll for loot items
+    const items = this._rollLoot(tile);
+    let message = `Scavenged ${baseAmount} ${tile.resource}`;
+
+    if (items.length > 0) {
+      if (!agent.loot) agent.loot = [];
+      agent.loot.push(...items);
+      const best = items.reduce((a, b) =>
+        RARITY_TABLE.findIndex(t => t.rarity === b.rarity) > RARITY_TABLE.findIndex(t => t.rarity === a.rarity) ? b : a
+      );
+      message += items.length === 1
+        ? ` — Found ${best.rarity} ${best.name}!`
+        : ` — Found ${items.length} items! (${best.rarity} ${best.name})`;
+      for (const item of items) {
+        this._log(`${agent.name} found ${item.rarity} ${item.name} at (${agent.x},${agent.y})`);
+      }
+    }
+
+    this._log(`${agent.name} scavenged at (${agent.x},${agent.y})`);
+    return { ok: true, message, energy: agent.energy, loot: items.length > 0 ? items : undefined };
   }
 
   _cmdRegisterService(agent, args) {
@@ -343,7 +484,10 @@ export class World {
     if (agent.energy < 2) return { error: 'Not enough energy' };
 
     const name = args[0];
-    const price = parseFloat(args[1]) || 0.01;
+    if (/\s/.test(name)) return { error: 'Service name cannot contain spaces' };
+    if (agent.services.some(s => s.name === name)) return { error: `You already have a service called '${name}'` };
+    const price = parseFloat(args[1]);
+    if (!Number.isFinite(price) || price < 0 || price > 1000) return { error: 'Price must be a number between 0 and 1000' };
     const description = args.slice(2).join(' ');
 
     const tile = this.getTile(agent.x, agent.y);
@@ -360,6 +504,24 @@ export class World {
     return { ok: true, message: `Registered service: ${name} at ${price} USDC`, service };
   }
 
+  _cmdRemoveService(agent, args) {
+    if (args.length < 1) return { error: 'Usage: REMOVE_SERVICE <name>' };
+    const name = args[0];
+
+    const idx = agent.services.findIndex(s => s.name === name);
+    if (idx === -1) return { error: `You don't have a service called '${name}'` };
+
+    agent.services.splice(idx, 1);
+
+    // Remove from all tiles
+    for (const t of this.tiles.values()) {
+      t.services = (t.services || []).filter(s => !(s.agentId === agent.id && s.name === name));
+    }
+
+    this._log(`${agent.name} removed service: ${name}`);
+    return { ok: true, message: `Removed service: ${name}` };
+  }
+
   _cmdInvokeService(agent, args) {
     // INVOKE_SERVICE <agentName> <serviceName> <args...>
     if (args.length < 2) return { error: 'Usage: INVOKE_SERVICE <agentName> <serviceName> [args...]' };
@@ -374,11 +536,15 @@ export class World {
     if (!service) return { error: `${targetName} has no service called '${serviceName}'` };
 
     agent.energy -= 1;
-
-    // Payment would happen via Circle nanopayments in production
-    // For now, track the transaction
     agent.reputation.transactions++;
     target.reputation.transactions++;
+
+    // Handle NPC built-in services
+    const npcResult = this._handleNpcService(agent, target, serviceName, serviceArgs);
+    if (npcResult) {
+      this._log(`${agent.name} used ${target.name}'s ${serviceName}: ${npcResult.message}`);
+      return npcResult;
+    }
 
     this._log(`${agent.name} invoked ${target.name}'s ${serviceName} service`);
     return {
@@ -388,6 +554,51 @@ export class World {
       args: serviceArgs.join(' '),
       // In production: payment receipt, service response
     };
+  }
+
+  _handleNpcService(agent, npc, serviceName, args) {
+    // Barnacle: exchange — swap resources 1:1
+    if (npc.id === 'npc-merchant' && serviceName === 'exchange') {
+      if (args.length < 2) return { ok: false, error: 'Usage: INVOKE_SERVICE Barnacle exchange <give_resource> <want_resource>' };
+      const [give, want] = args;
+      if (!RESOURCES.includes(give) || !RESOURCES.includes(want)) return { ok: false, error: `Unknown resource. Options: ${RESOURCES.join(', ')}` };
+      if (give === want) return { ok: false, error: 'Cannot exchange same resource' };
+      if ((agent.inventory[give] || 0) < 1) return { ok: false, error: `You don't have any ${give}` };
+
+      agent.inventory[give] -= 1;
+      agent.inventory[want] = (agent.inventory[want] || 0) + 1;
+      return { ok: true, message: `Exchanged 1 ${give} for 1 ${want} with ${npc.name}` };
+    }
+
+    // Barnacle: recharge — full energy
+    if (npc.id === 'npc-merchant' && serviceName === 'recharge') {
+      agent.energy = MAX_ENERGY;
+      return { ok: true, message: `${npc.name} recharged your energy to ${MAX_ENERGY}`, energy: agent.energy };
+    }
+
+    // Polyp: combine — 3 of any resource → 1 rare material (added to loot)
+    if (npc.id === 'npc-crafter' && serviceName === 'combine') {
+      if (args.length < 1) return { ok: false, error: 'Usage: INVOKE_SERVICE Polyp combine <resource>' };
+      const res = args[0];
+      if (!RESOURCES.includes(res)) return { ok: false, error: `Unknown resource. Options: ${RESOURCES.join(', ')}` };
+      if ((agent.inventory[res] || 0) < 3) return { ok: false, error: `Need 3 ${res} (have ${agent.inventory[res] || 0})` };
+
+      agent.inventory[res] -= 3;
+      const loot = {
+        id: crypto.randomUUID(),
+        name: `Refined ${res.charAt(0).toUpperCase() + res.slice(1)}`,
+        rarity: 'uncommon',
+        color: '#00b894',
+        resource: res,
+        foundAt: { x: npc.x, y: npc.y },
+        foundTick: this.tick,
+      };
+      if (!agent.loot) agent.loot = [];
+      agent.loot.push(loot);
+      return { ok: true, message: `${npc.name} combined 3 ${res} into ${loot.name}!`, loot };
+    }
+
+    return null; // Not an NPC service
   }
 
   _cmdPostBounty(agent, args) {
@@ -462,14 +673,62 @@ export class World {
       agent.energy = Math.min(MAX_ENERGY, agent.energy + ENERGY_REGEN);
     }
 
-    // Harvest resources — agents on tiles with resources collect them
-    for (const agent of this.agents.values()) {
-      const tile = this.getTile(agent.x, agent.y);
-      if (tile && tile.resource) {
-        const amount = tile.resource === ARCHETYPES[agent.archetype].affinity ? 2 : 1;
-        agent.inventory[tile.resource] = (agent.inventory[tile.resource] || 0) + amount;
+    // Tile owners passively earn a trickle of their tile's resource
+    for (const tile of this.tiles.values()) {
+      if (tile.built && tile.owner) {
+        const owner = this.agents.get(tile.owner);
+        if (owner) {
+          owner.inventory[tile.resource] = (owner.inventory[tile.resource] || 0) + 1;
+        }
       }
     }
+
+    // Prune completed bounties older than 50 ticks
+    this.bounties = this.bounties.filter(b => !b.completed || (this.tick - (b.completedAt || 0)) < 50);
+
+    // Generate random quests periodically
+    const activeQuests = this.bounties.filter(b => !b.completed && b.posterId === 'system');
+    if (this.tick % 20 === 0 && activeQuests.length < 10 && this.agents.size > 0) {
+      const quest = this._generateRandomQuest();
+      if (quest) {
+        this.bounties.push(quest);
+        this._log(`New quest: "${quest.description}" for ${quest.reward} USDC`);
+      }
+    }
+  }
+
+  _generateRandomQuest() {
+    const template = RANDOM_QUEST_TEMPLATES[Math.floor(Math.random() * RANDOM_QUEST_TEMPLATES.length)];
+    const resource = RESOURCES[Math.floor(Math.random() * RESOURCES.length)];
+    const amount = Math.floor(Math.random() * 5) + 2;
+
+    // Pick a random revealed tile for delivery quests
+    const tiles = [...this.tiles.values()];
+    const targetTile = tiles[Math.floor(Math.random() * tiles.length)];
+
+    const desc = template.desc
+      .replace('{amount}', amount)
+      .replace('{resource}', resource)
+      .replace('{x}', targetTile.x)
+      .replace('{y}', targetTile.y);
+
+    const rewardBase = { trade: 0.04, collect: 0.015, scavenge: 0.01 };
+    const reward = Math.round((rewardBase[template.type] || 0.02) * amount * 100) / 100;
+
+    return {
+      id: crypto.randomUUID(),
+      poster: 'The Reef',
+      posterId: 'system',
+      reward,
+      description: desc,
+      questType: template.type,
+      target: amount,
+      resource,
+      claimed: false,
+      claimedBy: null,
+      completed: false,
+      postedAt: this.tick,
+    };
   }
 
   // ── State ──────────────────────────────────────────────────────────
@@ -498,5 +757,57 @@ export class World {
     const entry = `[tick:${String(this.tick).padStart(4, '0')}] ${event}`;
     this.log.push(entry);
     if (this.log.length > 500) this.log = this.log.slice(-500);
+  }
+
+  // ── Persistence ────────────────────────────────────────────────────
+
+  save(path) {
+    const data = JSON.stringify({
+      tick: this.tick,
+      tiles: Object.fromEntries(this.tiles),
+      agents: Object.fromEntries(this.agents), // full agent data including internal fields
+      bounties: this.bounties,
+      messages: this.messages.slice(-20),
+    }, null, 2);
+    fs.writeFile(path, data, (err) => {
+      if (err) console.error('  World: save failed —', err.message);
+    });
+  }
+
+  load(path) {
+    if (!fs.existsSync(path)) return false;
+
+    let data;
+    try {
+      data = JSON.parse(fs.readFileSync(path, 'utf-8'));
+    } catch (err) {
+      console.error(`  World: failed to load ${path} — ${err.message}`);
+      return false;
+    }
+    this.tick = data.tick || 0;
+
+    // Restore tiles
+    for (const [key, tdata] of Object.entries(data.tiles || {})) {
+      this.tiles.set(key, tdata);
+    }
+
+    // Restore agents
+    for (const [id, adata] of Object.entries(data.agents || {})) {
+      this.agents.set(id, {
+        ...adata,
+        reputation: {
+          transactions: adata.reputation?.transactions || 0,
+          totalRating: adata.reputation?.totalRating || 0,
+          count: adata.reputation?.count || 0,
+        },
+      });
+    }
+
+    // Restore bounties
+    this.bounties = data.bounties || [];
+    this.messages = data.messages || [];
+
+    console.log(`  World: loaded from ${path} (tick ${this.tick}, ${this.agents.size} agents, ${this.tiles.size} tiles)`);
+    return true;
   }
 }
