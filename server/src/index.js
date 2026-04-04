@@ -19,7 +19,7 @@ import { dirname, join } from 'path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SAVE_PATH = join(__dirname, '..', 'world-state.json');
 const PORT = process.env.PORT || 3001;
-const TICK_INTERVAL = parseInt(process.env.TICK_INTERVAL) || 12_000;
+const TICK_INTERVAL = parseInt(process.env.TICK_INTERVAL) || 6_000; // 6s (half block), 12s when synced to blocks
 
 const app = express();
 app.use(express.json());
