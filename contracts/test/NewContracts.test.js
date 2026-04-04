@@ -71,11 +71,13 @@ describe("ReefResource", function () {
     const ids = [0, 1]; // coral, crystal
     const amounts = [10, 5];
     const nonce = 0;
+    const chainId = (await ethers.provider.getNetwork()).chainId;
+    const contractAddr = await resource.getAddress();
 
-    // Server signs the claim
+    // Server signs the claim (includes chainId + contract address)
     const hash = ethers.solidityPackedKeccak256(
-      ["address", "uint256[]", "uint256[]", "uint256"],
-      [user1.address, ids, amounts, nonce]
+      ["address", "uint256[]", "uint256[]", "uint256", "uint256", "address"],
+      [user1.address, ids, amounts, nonce, chainId, contractAddr]
     );
     const signature = await owner.signMessage(ethers.getBytes(hash));
 

@@ -105,8 +105,8 @@ contract ReefResource is ERC1155, Ownable {
         require(nonce == claimNonce[to], "ReefResource: invalid nonce");
         require(ids.length == amounts.length, "ReefResource: length mismatch");
 
-        // Verify server signature
-        bytes32 hash = keccak256(abi.encodePacked(to, ids, amounts, nonce));
+        // Verify server signature (includes chain ID and contract address to prevent replay)
+        bytes32 hash = keccak256(abi.encodePacked(to, ids, amounts, nonce, block.chainid, address(this)));
         bytes32 ethHash = hash.toEthSignedMessageHash();
         require(ethHash.recover(signature) == owner(), "ReefResource: invalid signature");
 

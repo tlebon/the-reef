@@ -88,10 +88,11 @@ contract ReefAgent is ERC721, Ownable, ReentrancyGuard {
         string memory archetype,
         string memory avatarURI,
         string memory ensName,
+        address delegateWallet,
         uint256 mintedAt
     ) {
         AgentData memory a = agents[tokenId];
-        return (a.name, a.archetype, a.avatarURI, a.ensName, a.mintedAt);
+        return (a.name, a.archetype, a.avatarURI, a.ensName, a.delegateWallet, a.mintedAt);
     }
 
     function _update(address to, uint256 tokenId, address auth) internal override nonReentrant returns (address) {
