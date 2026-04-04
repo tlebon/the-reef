@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import InputModal from './InputModal';
+import { MODAL_CONFIGS, sanitizeName } from './modalConfigs';
 
 export default function ActionBar({ agent, currentTile, messages, agents, onCommand }) {
   const [showBuild, setShowBuild] = useState(false);
@@ -40,92 +41,24 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
   const renderModal = () => {
     if (!modal) return null;
 
-    switch (modal.type) {
-      case 'register-service':
-        return (
-          <InputModal
-            title="Register Service"
-            fields={[
-              { key: 'name', label: 'Service name', placeholder: 'e.g. exchange' },
-              { key: 'price', label: 'Price (USDC)', placeholder: '0.01', defaultValue: '0.01' },
-              { key: 'desc', label: 'Description', placeholder: 'A service', defaultValue: 'A service' },
-            ]}
-            onCancel={closeModal}
-            onConfirm={(vals) => {
-              closeModal();
-              if (!vals.name) return;
-              onCommand(`REGISTER_SERVICE ${vals.name} ${vals.price || '0.01'} ${vals.desc || 'A service'}`);
-            }}
-          />
-        );
+    // Resolve config — static object or function (exchange/combine need ownerName)
+    const rawCfg = MODAL_CONFIGS[modal.type];
+    const config = typeof rawCfg === 'function' ? rawCfg(modal.ownerName) : rawCfg;
+    if (!config) return null;
 
-      case 'say':
-        return (
-          <InputModal
-            title="Say Something"
-            fields={[{ key: 'msg', label: 'Message', placeholder: 'Hello world' }]}
-            onCancel={closeModal}
-            onConfirm={(vals) => {
-              closeModal();
-              if (vals.msg) onCommand(`SAY ${vals.msg}`);
-            }}
-          />
-        );
-
-      case 'post-bounty':
-        return (
-          <InputModal
-            title="Post Bounty"
-            fields={[
-              { key: 'reward', label: 'Reward (USDC)', placeholder: '0.01', defaultValue: '0.01' },
-              { key: 'desc', label: 'Description', placeholder: 'Describe the bounty' },
-            ]}
-            onCancel={closeModal}
-            onConfirm={(vals) => {
-              closeModal();
-              if (vals.desc) onCommand(`POST_BOUNTY ${vals.reward || '0.01'} ${vals.desc}`);
-            }}
-          />
-        );
-
-      case 'invoke-exchange':
-        return (
-          <InputModal
-            title={`Exchange via ${modal.ownerName}`}
-            fields={[
-              { key: 'give', label: 'Give resource', placeholder: 'coral / crystal / kelp / shell' },
-              { key: 'want', label: 'Want resource', placeholder: 'coral / crystal / kelp / shell' },
-            ]}
-            onCancel={closeModal}
-            onConfirm={(vals) => {
-              closeModal();
-              if (vals.give && vals.want) {
-                onCommand(`INVOKE_SERVICE ${modal.ownerName} ${modal.serviceName} ${vals.give} ${vals.want}`);
-              }
-            }}
-          />
-        );
-
-      case 'invoke-combine':
-        return (
-          <InputModal
-            title={`Combine via ${modal.ownerName}`}
-            fields={[
-              { key: 'resource', label: 'Which resource to combine?', placeholder: 'coral / crystal / kelp / shell' },
-            ]}
-            onCancel={closeModal}
-            onConfirm={(vals) => {
-              closeModal();
-              if (vals.resource) {
-                onCommand(`INVOKE_SERVICE ${modal.ownerName} ${modal.serviceName} ${vals.resource}`);
-              }
-            }}
-          />
-        );
-
-      default:
-        return null;
-    }
+    return (
+      <InputModal
+        title={config.title}
+        fields={config.fields}
+        sanitize={sanitizeName}
+        onCancel={closeModal}
+        onConfirm={(vals) => {
+          closeModal();
+          const cmd = config.toCommand(vals);
+          if (cmd) onCommand(cmd);
+        }}
+      />
+    );
   };
 
   return (
@@ -188,9 +121,9 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
                       const ownerName = agents.find(a => a.id === s.agentId)?.name;
                       if (!ownerName) return;
                       if (s.name === 'exchange') {
-                        setModal({ type: 'invoke-exchange', ownerName, serviceName: s.name });
+                        setModal({ type: 'exchange', ownerName });
                       } else if (s.name === 'combine') {
-                        setModal({ type: 'invoke-combine', ownerName, serviceName: s.name });
+                        setModal({ type: 'combine', ownerName });
                       } else {
                         onCommand(`INVOKE_SERVICE ${ownerName} ${s.name}`);
                       }

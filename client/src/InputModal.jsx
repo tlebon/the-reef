@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 /**
  * Reusable modal that replaces browser prompt() calls.
@@ -8,8 +8,9 @@ import React, { useState, useEffect, useRef } from 'react';
  *   fields   - array of { key, label, placeholder?, defaultValue? }
  *   onConfirm(values) - called with { [key]: value } map
  *   onCancel()
+ *   validate(key, value) - optional, returns sanitized value
  */
-export default function InputModal({ title, fields, onConfirm, onCancel }) {
+export default function InputModal({ title, fields, onConfirm, onCancel, sanitize }) {
   const [values, setValues] = useState(() => {
     const init = {};
     fields.forEach(f => { init[f.key] = f.defaultValue || ''; });
@@ -22,14 +23,17 @@ export default function InputModal({ title, fields, onConfirm, onCancel }) {
     if (firstRef.current) firstRef.current.focus();
   }, []);
 
-  // Close on Escape
+  // Close on Escape — stable ref to avoid listener churn
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === 'Escape') onCancel();
+      if (e.key === 'Escape') onCancelRef.current();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [onCancel]);
+  }, []);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -38,7 +42,7 @@ export default function InputModal({ title, fields, onConfirm, onCancel }) {
 
   return (
     <div style={styles.overlay} onClick={onCancel}>
-      <form style={styles.modal} onClick={e => e.stopPropagation()} onSubmit={handleSubmit}>
+      <form style={styles.modal} onClick={e => e.stopPropagation()} onSubmit={handleSubmit} role="dialog" aria-modal="true" aria-label={title}>
         <h3 style={styles.title}>{title}</h3>
 
         {fields.map((f, i) => (
@@ -49,7 +53,10 @@ export default function InputModal({ title, fields, onConfirm, onCancel }) {
               style={styles.input}
               placeholder={f.placeholder || ''}
               value={values[f.key]}
-              onChange={e => setValues(prev => ({ ...prev, [f.key]: e.target.value }))}
+              onChange={e => {
+                const val = sanitize ? sanitize(f.key, e.target.value) : e.target.value;
+                setValues(prev => ({ ...prev, [f.key]: val }));
+              }}
             />
           </div>
         ))}
@@ -84,7 +91,7 @@ const styles = {
   title: {
     color: '#00d4aa',
     fontSize: '1rem',
-    marginBottom: '16px',
+    margin: '0 0 16px 0',
   },
   field: {
     marginBottom: '12px',

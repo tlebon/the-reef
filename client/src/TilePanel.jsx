@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import InputModal from './InputModal';
+import { MODAL_CONFIGS, sanitizeName } from './modalConfigs';
 
 const MINT_COSTS = {
   coral:   { coral: 3, crystal: 2, kelp: 0, shell: 1 },
@@ -33,40 +34,22 @@ export default function TilePanel({ tile, agents, myAgentId, onCommand, onClose,
   const renderModal = () => {
     if (!modal) return null;
 
-    if (modal.type === 'register-service') {
-      return (
-        <InputModal
-          title="Register Service"
-          fields={[
-            { key: 'name', label: 'Service name', placeholder: 'e.g. exchange' },
-            { key: 'price', label: 'Price (USDC)', placeholder: '0.01', defaultValue: '0.01' },
-            { key: 'desc', label: 'Description', placeholder: 'A service', defaultValue: 'A service' },
-          ]}
-          onCancel={closeModal}
-          onConfirm={(vals) => {
-            closeModal();
-            if (!vals.name) return;
-            onCommand(`REGISTER_SERVICE ${vals.name} ${vals.price || '0.01'} ${vals.desc || 'A service'}`);
-          }}
-        />
-      );
-    }
+    const config = MODAL_CONFIGS[modal.type];
+    if (!config) return null;
 
-    if (modal.type === 'say') {
-      return (
-        <InputModal
-          title="Say Something"
-          fields={[{ key: 'msg', label: 'Message', placeholder: 'Hello world' }]}
-          onCancel={closeModal}
-          onConfirm={(vals) => {
-            closeModal();
-            if (vals.msg) onCommand(`SAY ${vals.msg}`);
-          }}
-        />
-      );
-    }
-
-    return null;
+    return (
+      <InputModal
+        title={config.title}
+        fields={config.fields}
+        sanitize={sanitizeName}
+        onCancel={closeModal}
+        onConfirm={(vals) => {
+          closeModal();
+          const cmd = config.toCommand(vals);
+          if (cmd) onCommand(cmd);
+        }}
+      />
+    );
   };
 
   return (
