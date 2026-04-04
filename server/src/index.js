@@ -183,6 +183,46 @@ function resolveAgentByWallet(req, res, next) {
   next();
 }
 
+// POST /api/agent/:walletAddress/claim — sign a resource claim for on-chain submission
+app.post('/api/agent/:walletAddress/claim', verifyWalletAuth, resolveAgentByWallet, async (req, res) => {
+  const agent = req.agent;
+  if (!agent.ownerWallet) {
+    return res.status(400).json({ error: 'Agent has no wallet — connect a wallet first' });
+  }
+
+  const resourceMap = { coral: 0, crystal: 1, kelp: 2, shell: 3 };
+  const ids = [];
+  const amounts = [];
+  for (const [name, id] of Object.entries(resourceMap)) {
+    const amount = agent.inventory?.[name] || 0;
+    if (amount > 0) {
+      ids.push(id);
+      amounts.push(amount);
+    }
+  }
+
+  if (ids.length === 0) {
+    return res.status(400).json({ error: 'No resources to claim' });
+  }
+
+  const nonce = req.body.nonce ?? 0;
+  const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour
+
+  const claim = await chain.signResourceClaim(agent.ownerWallet, ids, amounts, nonce, deadline);
+  if (!claim) {
+    return res.status(503).json({ error: 'Chain signing unavailable — running in local mode' });
+  }
+
+  res.json({
+    ...claim,
+    ids,
+    amounts,
+    deadline,
+    resources: Object.fromEntries(ids.map((id, i) => [Object.keys(resourceMap)[id], amounts[i]])),
+    contractAddress: process.env.REEF_RESOURCE_ADDRESS || null,
+  });
+});
+
 // GET /api/agent/:walletAddress/state — full agent state including surroundings
 app.get('/api/agent/:walletAddress/state', verifyWalletAuth, resolveAgentByWallet, (req, res) => {
   const lookResult = world.execute(req.agent.id, 'LOOK');

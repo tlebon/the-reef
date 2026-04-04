@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import InputModal from './InputModal';
 import { MODAL_CONFIGS, sanitizeInput } from './modalConfigs';
 
-export default function ActionBar({ agent, currentTile, messages, agents, onCommand }) {
+export default function ActionBar({ agent, currentTile, messages, agents, onCommand, wallet }) {
   const [showBuild, setShowBuild] = useState(false);
   const [buildSymbol, setBuildSymbol] = useState('#');
   const [modal, setModal] = useState(null);
+  const [claiming, setClaiming] = useState(false);
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -109,6 +110,9 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
               <button style={styles.actionBtn} onClick={() => setModal({ type: 'say' })}>Say</button>
               <button style={styles.actionBtn} onClick={() => setModal({ type: 'post-bounty' })}>Post bounty</button>
               <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
+              {agents.filter(a => a.id !== agent.id && a.x === agent.x && a.y === agent.y).map(a => (
+                <button key={a.id} style={styles.actionBtn} onClick={() => setModal({ type: 'trade', ownerName: a.name })}>Trade with {a.name}</button>
+              ))}
             </>
           ) : currentTile && currentTile.built ? (
             // On someone else's tile — show their services
@@ -135,6 +139,9 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
               )}
               <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
               <button style={styles.actionBtn} onClick={() => setModal({ type: 'say' })}>Say</button>
+              {agents.filter(a => a.id !== agent.id && a.x === agent.x && a.y === agent.y).map(a => (
+                <button key={a.id} style={styles.actionBtn} onClick={() => setModal({ type: 'trade', ownerName: a.name })}>Trade with {a.name}</button>
+              ))}
             </>
           ) : currentTile && !currentTile.built ? (
             // On an unbuilt tile
@@ -201,6 +208,41 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
               </span>
             ))}
           </div>
+        )}
+        {wallet?.type === 'metamask' && agent.inventory && Object.values(agent.inventory).some(v => v > 0) && (
+          <button
+            style={{ ...styles.actionBtn, fontSize: '0.65rem', opacity: claiming ? 0.5 : 1 }}
+            disabled={claiming}
+            onClick={async () => {
+              setClaiming(true);
+              try {
+                const { ethers } = await import('ethers');
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const signer = await provider.getSigner();
+                const sig = wallet.signature;
+                const msg = wallet.message;
+                const resp = await fetch(`/api/agent/${wallet.address}/claim`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'x-wallet-signature': sig, 'x-wallet-message': msg },
+                  body: JSON.stringify({ nonce: 0 }),
+                });
+                const claim = await resp.json();
+                if (claim.error) { alert(claim.error); return; }
+                const contract = new ethers.Contract(claim.contractAddress, [
+                  'function claimResources(address to, uint256[] ids, uint256[] amounts, uint256 nonce, uint256 deadline, bytes signature) external',
+                ], signer);
+                const tx = await contract.claimResources(wallet.address, claim.ids, claim.amounts, claim.nonce, claim.deadline, claim.signature);
+                await tx.wait();
+                alert('Resources claimed on-chain!');
+              } catch (err) {
+                alert(`Claim failed: ${err.message}`);
+              } finally {
+                setClaiming(false);
+              }
+            }}
+          >
+            {claiming ? 'Claiming...' : 'Claim on-chain'}
+          </button>
         )}
       </div>
       {messages && messages.length > 0 && (

@@ -340,6 +340,7 @@ export default function App() {
           messages={worldState.messages}
           agents={agents}
           onCommand={handleCommand}
+          wallet={wallet}
         />
       )}
     </div>
