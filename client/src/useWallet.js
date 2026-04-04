@@ -1,6 +1,6 @@
 /**
  * Wallet connection hook.
- * Supports MetaMask (or any injected provider) and server-generated wallets.
+ * Supports MetaMask (or any injected provider) and generated wallets.
  */
 
 import { useState, useCallback } from 'react';
@@ -9,7 +9,11 @@ import { ethers } from 'ethers';
 export function useWallet() {
   const [wallet, setWallet] = useState(() => {
     const saved = localStorage.getItem('reef-wallet');
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    const parsed = JSON.parse(saved);
+    // Don't restore generated wallets — private key should not persist
+    if (parsed.type === 'generated') return null;
+    return parsed;
   });
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState(null);
@@ -33,7 +37,8 @@ export function useWallet() {
       const signature = await signer.signMessage(message);
 
       const walletData = { address, signature, message, type: 'metamask' };
-      localStorage.setItem('reef-wallet', JSON.stringify(walletData));
+      // Only persist address and type — not signature (it has a timestamp)
+      localStorage.setItem('reef-wallet', JSON.stringify({ address, type: 'metamask' }));
       setWallet(walletData);
       return walletData;
     } catch (err) {
@@ -44,15 +49,16 @@ export function useWallet() {
     }
   }, []);
 
-  // Create a new wallet (server-generated or client-generated)
+  // Create a new wallet — returns private key once, does NOT persist it
   const createWallet = useCallback(() => {
     const newWallet = ethers.Wallet.createRandom();
     const walletData = {
       address: newWallet.address,
-      privateKey: newWallet.privateKey,
+      privateKey: newWallet.privateKey, // shown to user once, not stored
       type: 'generated',
     };
-    localStorage.setItem('reef-wallet', JSON.stringify(walletData));
+    // Only persist the address, NOT the private key
+    localStorage.setItem('reef-wallet', JSON.stringify({ address: newWallet.address, type: 'generated' }));
     setWallet(walletData);
     return walletData;
   }, []);
@@ -61,6 +67,7 @@ export function useWallet() {
     localStorage.removeItem('reef-wallet');
     localStorage.removeItem('reef-agent-id');
     setWallet(null);
+    setError(null);
   }, []);
 
   return {

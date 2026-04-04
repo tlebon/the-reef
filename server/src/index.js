@@ -80,6 +80,16 @@ io.on('connection', (socket) => {
 
   // Agent registration
   socket.on('agent:register', async ({ name, archetype, walletAddress, delegateWallet }) => {
+    // Validate wallet addresses if provided
+    if (walletAddress && !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      socket.emit('agent:error', { error: 'Invalid wallet address' });
+      return;
+    }
+    if (delegateWallet && !/^0x[a-fA-F0-9]{40}$/.test(delegateWallet)) {
+      socket.emit('agent:error', { error: 'Invalid delegate wallet address' });
+      return;
+    }
+
     // Check if wallet already has an agent
     if (walletAddress) {
       const existing = world.getAgentByWallet(walletAddress);

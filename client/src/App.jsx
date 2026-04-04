@@ -26,7 +26,7 @@ export default function App() {
   const [latestBlock, setLatestBlock] = useState(null);
   const [joining, setJoining] = useState(false);
   const [completedQuest, setCompletedQuest] = useState(null);
-  const { wallet, connecting, connectMetaMask, createWallet, disconnect } = useWallet();
+  const { wallet, connecting, error: walletError, connectMetaMask, createWallet, disconnect } = useWallet();
 
   useEffect(() => {
     const s = io(SOCKET_URL);
@@ -133,6 +133,7 @@ export default function App() {
         addActivity(`New wallet created: ${w.address.slice(0, 10)}...`);
       }}
       connecting={connecting}
+      walletError={walletError}
     />;
   }
 

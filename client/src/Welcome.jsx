@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Welcome({ onEnter, wallet, onConnectMetaMask, onCreateWallet, connecting }) {
+export default function Welcome({ onEnter, wallet, onConnectMetaMask, onCreateWallet, connecting, walletError }) {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
@@ -43,6 +43,8 @@ export default function Welcome({ onEnter, wallet, onConnectMetaMask, onCreateWa
             <button style={styles.enterBtn} onClick={onEnter}>Enter The Reef</button>
           </div>
         ) : (
+          <>
+          {walletError && <div style={styles.error}>{walletError}</div>}
           <div style={styles.walletOptions}>
             <button
               style={styles.enterBtn}
@@ -58,6 +60,7 @@ export default function Welcome({ onEnter, wallet, onConnectMetaMask, onCreateWa
               Play without wallet
             </button>
           </div>
+          </>
         )}
       </div>
     </div>
@@ -120,6 +123,14 @@ const styles = {
     color: '#5f6d7e',
     fontSize: '0.8rem',
     margin: '2px 0 0 0',
+  },
+  error: {
+    color: '#ff6b6b',
+    fontSize: '0.8rem',
+    marginBottom: '12px',
+    padding: '8px',
+    background: '#ff6b6b15',
+    borderRadius: '4px',
   },
   walletOptions: {
     display: 'flex',
