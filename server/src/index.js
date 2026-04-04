@@ -94,14 +94,16 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Validate timestamp — reject signatures older than 5 minutes
+      // Validate timestamp — require it and reject if older than 5 minutes
       const tsMatch = message.match(/Timestamp: (\d+)/);
-      if (tsMatch) {
-        const sigAge = Date.now() - parseInt(tsMatch[1]);
-        if (sigAge > 5 * 60 * 1000) {
-          socket.emit('agent:error', { error: 'Signature expired — please sign again' });
-          return;
-        }
+      if (!tsMatch) {
+        socket.emit('agent:error', { error: 'Invalid signature message — missing timestamp' });
+        return;
+      }
+      const sigAge = Date.now() - parseInt(tsMatch[1]);
+      if (sigAge > 5 * 60 * 1000) {
+        socket.emit('agent:error', { error: 'Signature expired — please sign again' });
+        return;
       }
 
       try {
@@ -124,10 +126,9 @@ io.on('connection', (socket) => {
     if (walletAddress) {
       const existing = world.getAgentByWallet(walletAddress);
       if (existing) {
-        // Reconnect to existing agent
+        // Reconnect to existing agent — don't broadcast, they're already in the world
         socket.agentId = existing.id;
         socket.emit('agent:registered', { agent: existing, tile: world.getTile(existing.x, existing.y) });
-        io.emit('world:agent_joined', { agent: existing, tile: world.getTile(existing.x, existing.y) });
         return;
       }
     }

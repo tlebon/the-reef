@@ -178,7 +178,7 @@ export default function App() {
           <span style={styles.myAgent}>
             {worldState.agents[myAgentId]?.name || myAgentId}
             {wallet && <span style={styles.walletBadge}>{wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}</span>}
-            <button style={styles.logoutBtn} onClick={() => { disconnect(); setMyAgentId(null); setShowWelcome(true); }}>logout</button>
+            <button style={styles.logoutBtn} onClick={() => { disconnect(); setMyAgentId(null); setShowWelcome(true); setShowJoin(false); }}>logout</button>
           </span>
         )}
       </header>
