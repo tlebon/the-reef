@@ -222,14 +222,6 @@ app.post('/api/agent/:walletAddress/claim', verifyWalletAuth, resolveAgentByWall
     return res.status(503).json({ error: 'Chain signing unavailable — running in local mode' });
   }
 
-  // Deduct claimed resources from in-game inventory
-  for (const [name] of Object.entries(resourceMap)) {
-    if (agent.inventory?.[name] > 0) {
-      agent.inventory[name] = 0;
-    }
-  }
-  saveWorldState(world);
-
   res.json({
     ...claim,
     ids,
