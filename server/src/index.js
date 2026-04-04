@@ -193,25 +193,24 @@ io.on('connection', (socket) => {
 
   // Agent command
   socket.on('agent:command', async ({ agentId, command }) => {
-    // Intercept INVOKE_SERVICE to process payment first
-    const parts = command.trim().split(/\s+/);
-    if (parts[0]?.toUpperCase() === 'INVOKE_SERVICE' && parts.length >= 3) {
+    // Execute command first
+    const result = world.execute(agentId, command);
+
+    // Process payment AFTER successful service invocation
+    if (result.ok && result.service && result.service.price > 0) {
+      const parts = command.trim().split(/\s+/);
       const targetName = parts[1];
-      const serviceName = parts[2];
       const target = [...world.agents.values()].find(a => a.name === targetName);
       if (target) {
-        const service = target.services.find(s => s.name === serviceName);
-        if (service && service.price > 0) {
-          const payResult = await payments.processPayment(agentId, target.id, service.price, serviceName);
-          if (payResult.error) {
-            socket.emit('agent:result', { command, result: { error: payResult.error } });
-            return;
-          }
+        const payResult = await payments.processPayment(agentId, target.id, result.service.price, result.service.name);
+        if (payResult.error) {
+          result.paymentError = payResult.error;
+        } else {
+          result.payment = payResult;
         }
       }
     }
 
-    const result = world.execute(agentId, command);
     socket.emit('agent:result', { command, result });
 
     // Check quest completion after every action
