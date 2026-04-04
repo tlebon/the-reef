@@ -7,6 +7,7 @@
  */
 
 const QUEST_CRITERIA = {
+  arrive: () => true,
   build_first: (agent) => agent.tilesOwned >= 1,
   explore: (agent, quest) => {
     // Count tiles visited (tracked via loot/scavenge visits, approximate with tiles known)

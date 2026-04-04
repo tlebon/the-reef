@@ -6,11 +6,12 @@
  */
 
 const SEED_BOUNTIES = [
-  { id: 'seed-build',   reward: 0.01,  questType: 'build_first',      description: 'Build your first structure on any tile' },
+  { id: 'seed-arrive',  reward: 0.005, questType: 'arrive',             description: 'Arrive at The Reef' },
+  { id: 'seed-build',   reward: 0.01,  questType: 'build_first',        description: 'Build your first structure on any tile' },
   { id: 'seed-scavenge',reward: 0.005, questType: 'scavenge', target: 3, description: 'Scavenge 3 times' },
   { id: 'seed-trade',   reward: 0.02,  questType: 'trade',   target: 1, description: 'Complete a trade with another agent' },
-  { id: 'seed-service', reward: 0.015, questType: 'register_service',  description: 'Register a service on a tile you own' },
-  { id: 'seed-collect',  reward: 0.01, questType: 'collect', target: 10, resource: 'coral', description: 'Collect 10 coral' },
+  { id: 'seed-service', reward: 0.015, questType: 'register_service',   description: 'Register a service on a tile you own' },
+  { id: 'seed-collect', reward: 0.01,  questType: 'collect', target: 10, resource: 'coral', description: 'Collect 10 coral' },
 ];
 
 const NPC_AGENTS = [

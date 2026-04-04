@@ -86,6 +86,12 @@ io.on('connection', (socket) => {
       socket.emit('agent:registered', result);
       io.emit('world:agent_joined', { agent: result.agent, tile: result.tile });
 
+      // Check quests on join (triggers "arrive" quest)
+      const completed = checkQuests(world, result.agent);
+      if (completed.length > 0) {
+        socket.emit('quest:completed', completed);
+      }
+
       // Register on-chain if wallet address provided
       if (walletAddress) {
         await chain.registerAgent(walletAddress);
