@@ -83,14 +83,19 @@ export default function App() {
     setActivities(prev => [...prev.slice(-99), { time: new Date(), msg }]);
   }, []);
 
+  const [joining, setJoining] = useState(false);
+
   const handleJoin = (name, archetype) => {
     if (!socket) return;
+    setJoining(true);
+    addActivity(`Joining as ${name} (${archetype})...`);
     const id = `agent-${Date.now()}`;
     socket.emit('agent:register', { id, name, archetype });
   };
 
   const handleCommand = (command) => {
     if (!socket || !myAgentId) return;
+    addActivity(`> ${command}`);
     socket.emit('agent:command', { agentId: myAgentId, command });
   };
 

@@ -11,18 +11,17 @@ import fs from 'fs';
 const RESOURCES = ['coral', 'crystal', 'kelp', 'shell'];
 
 const RARITY_TABLE = [
-  { rarity: 'common',    weight: 60, color: '#8892a4' },
-  { rarity: 'uncommon',  weight: 25, color: '#00b894' },
-  { rarity: 'rare',      weight: 10, color: '#a29bfe' },
-  { rarity: 'legendary', weight: 4,  color: '#fdcb6e' },
-  { rarity: 'mythic',    weight: 1,  color: '#ff6b6b' },
+  { rarity: 'common',    chance: 0.80, color: '#8892a4' },
+  { rarity: 'uncommon',  chance: 0.15, color: '#00b894' },
+  { rarity: 'rare',      chance: 0.04, color: '#a29bfe' },
+  { rarity: 'legendary', chance: 0.01, color: '#fdcb6e' },
 ];
 
 const LOOT_NAMES = {
-  coral:   ['Coral Shard', 'Reef Fragment', 'Polyp Bloom', 'Tide Pearl', 'Abyssal Coral'],
-  crystal: ['Crystal Splinter', 'Prism Dust', 'Geode Heart', 'Star Fragment', 'Void Crystal'],
-  kelp:    ['Kelp Strand', 'Sea Vine', 'Drift Seed', 'Deep Root', 'Leviathan Kelp'],
-  shell:   ['Shell Chip', 'Nautilus Ring', 'Conch Echo', 'Pearl Drop', 'Ancient Shell'],
+  coral:   ['Coral Shard', 'Reef Fragment', 'Polyp Bloom', 'Abyssal Coral'],
+  crystal: ['Crystal Splinter', 'Prism Dust', 'Geode Heart', 'Void Crystal'],
+  kelp:    ['Kelp Strand', 'Sea Vine', 'Drift Seed', 'Leviathan Kelp'],
+  shell:   ['Shell Chip', 'Nautilus Ring', 'Conch Echo', 'Ancient Shell'],
 };
 
 const RANDOM_QUEST_TEMPLATES = [
@@ -243,33 +242,27 @@ export class World {
     };
   }
 
-  _rollRarity() {
-    const roll = Math.random() * 100;
-    let cumulative = 0;
-    for (const tier of RARITY_TABLE) {
-      cumulative += tier.weight;
-      if (roll < cumulative) return tier;
-    }
-    return RARITY_TABLE[0];
-  }
-
-  _generateLoot(tile) {
+  _rollLoot(tile) {
     const names = LOOT_NAMES[tile.resource] || LOOT_NAMES.coral;
-    const tier = this._rollRarity();
-    // Higher rarity = pick from later (rarer) names in the array
-    const nameIndex = Math.min(
-      Math.floor(RARITY_TABLE.indexOf(tier) * names.length / RARITY_TABLE.length),
-      names.length - 1
-    );
-    return {
-      id: crypto.randomUUID(),
-      name: names[nameIndex],
-      rarity: tier.rarity,
-      color: tier.color,
-      resource: tile.resource,
-      foundAt: { x: tile.x, y: tile.y },
-      foundTick: this.tick,
-    };
+    const items = [];
+
+    // Roll each tier independently — you always get a chance at each
+    for (let i = 0; i < RARITY_TABLE.length; i++) {
+      const tier = RARITY_TABLE[i];
+      if (Math.random() < tier.chance) {
+        items.push({
+          id: crypto.randomUUID(),
+          name: names[i],
+          rarity: tier.rarity,
+          color: tier.color,
+          resource: tile.resource,
+          foundAt: { x: tile.x, y: tile.y },
+          foundTick: this.tick,
+        });
+      }
+    }
+
+    return items;
   }
 
   _cmdMove(agent, direction) {
@@ -295,17 +288,24 @@ export class World {
 
     const result = { ok: true, message: `Moved ${direction} to (${nx},${ny})`, energy: agent.energy };
 
-    // Loot chance on first visit to a tile (30% chance)
+    // Roll for loot on first visit
     if (!tile.visitedBy) tile.visitedBy = [];
     if (!tile.visitedBy.includes(agent.id)) {
       tile.visitedBy.push(agent.id);
-      if (Math.random() < 0.15) {
-        const loot = this._generateLoot(tile);
+      const items = this._rollLoot(tile);
+      if (items.length > 0) {
         if (!agent.loot) agent.loot = [];
-        agent.loot.push(loot);
-        result.loot = loot;
-        result.message += ` — Found ${loot.rarity} ${loot.name}!`;
-        this._log(`${agent.name} found ${loot.rarity} ${loot.name} at (${nx},${ny})`);
+        agent.loot.push(...items);
+        result.loot = items;
+        const best = items.reduce((a, b) =>
+          RARITY_TABLE.findIndex(t => t.rarity === b.rarity) > RARITY_TABLE.findIndex(t => t.rarity === a.rarity) ? b : a
+        );
+        result.message += items.length === 1
+          ? ` — Found ${best.rarity} ${best.name}!`
+          : ` — Found ${items.length} items! (${best.rarity} ${best.name})`;
+        for (const item of items) {
+          this._log(`${agent.name} found ${item.rarity} ${item.name} at (${nx},${ny})`);
+        }
       }
     }
 
