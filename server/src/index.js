@@ -195,16 +195,25 @@ app.post('/api/agent/:walletAddress/claim', verifyWalletAuth, resolveAgentByWall
   const resourceMap = { coral: 0, crystal: 1, kelp: 2, shell: 3 };
   const ids = [];
   const amounts = [];
+
+  // Read on-chain balances to only mint the delta
   for (const [name, id] of Object.entries(resourceMap)) {
-    const amount = agent.inventory?.[name] || 0;
-    if (amount > 0) {
+    const inGame = agent.inventory?.[name] || 0;
+    let onChain = 0;
+    try {
+      if (chain.reefResource) {
+        onChain = Number(await chain.reefResource.balanceOf(agent.ownerWallet, id));
+      }
+    } catch { /* assume 0 */ }
+    const delta = inGame - onChain;
+    if (delta > 0) {
       ids.push(id);
-      amounts.push(amount);
+      amounts.push(delta);
     }
   }
 
   if (ids.length === 0) {
-    return res.status(400).json({ error: 'No resources to claim' });
+    return res.status(400).json({ error: 'On-chain balances already match (nothing new to claim)' });
   }
 
   // Read nonce from contract to prevent replay
