@@ -193,9 +193,21 @@ io.on('connection', (socket) => {
     if (walletAddress) {
       const existing = world.getAgentByWallet(walletAddress);
       if (existing) {
-        // Reconnect to existing agent — don't broadcast, they're already in the world
+        // Reconnect to existing agent
         socket.agentId = existing.id;
         socket.emit('agent:registered', { agent: existing, tile: world.getTile(existing.x, existing.y) });
+
+        // Mint NFT for existing agents that don't have one yet
+        if (chain.reefAgent) {
+          (async () => {
+            try {
+              const tokenId = await chain.reefAgent.agentOfOwner(walletAddress);
+              if (tokenId == 0) {
+                await chain.mintAgentNFT(walletAddress, existing.name, existing.archetype, existing.ensName || '');
+              }
+            } catch (e) { console.error("  Silent error:", e.message?.slice(0, 100)); }
+          })();
+        }
         return;
       }
     }
@@ -250,11 +262,36 @@ io.on('connection', (socket) => {
       (async () => {
         try {
           await ens.registerSubname(name, walletAddress, { archetype });
-          if (walletAddress) await chain.registerAgent(walletAddress);
+          if (walletAddress) {
+            await chain.registerAgent(walletAddress);
+            await chain.mintAgentNFT(walletAddress, name, archetype, result.agent.ensName || '');
+          }
         } catch (err) {
           console.error(`  On-chain registration error: ${err.message}`);
         }
       })();
+    }
+  });
+
+  // Claim agent for this socket (reconnection via world:state wallet lookup)
+  socket.on('agent:claim', ({ agentId, walletAddress }) => {
+    console.log(`  Claim: agentId=${agentId} wallet=${walletAddress?.slice(0,10)}`);
+    const agent = world.getAgent(agentId);
+    if (agent && agent.ownerWallet?.toLowerCase() === walletAddress?.toLowerCase()) {
+      socket.agentId = agentId;
+      console.log(`  Claim: success — socket.agentId set to ${agentId}`);
+
+      // Mint NFT if missing
+      if (chain.reefAgent && walletAddress) {
+        (async () => {
+          try {
+            const tokenId = await chain.reefAgent.agentOfOwner(walletAddress);
+            if (tokenId == 0) {
+              await chain.mintAgentNFT(walletAddress, agent.name, agent.archetype, agent.ensName || '');
+            }
+          } catch (e) { console.error("  Silent error:", e.message?.slice(0, 100)); }
+        })();
+      }
     }
   });
 
@@ -336,6 +373,18 @@ io.on('connection', (socket) => {
     const result = world.execute(agentId, command);
     socket.emit('agent:result', { command, result });
 
+    // Mint tile NFT on successful build
+    if (result.ok && result.isHome !== undefined) {
+      const agent = world.getAgent(agentId);
+      if (agent?.ownerWallet) {
+        const tile = world.getTile(agent.x, agent.y);
+        if (tile) {
+          const resourceMap = { coral: 0, crystal: 1, kelp: 2, shell: 3 };
+          chain.mintTileNFT(agent.ownerWallet, tile.x, tile.y, resourceMap[tile.resource] ?? 0, tile.symbol).catch(() => {});
+        }
+      }
+    }
+
     // Check quest completion after every action
     if (result.ok) {
       const agent = world.getAgent(agentId);
@@ -406,6 +455,18 @@ async function start() {
       world.tiles.set(`${tile.x},${tile.y}`, tile);
     }
     world.bounties = loadBounties();
+
+    // Sync tick with on-chain state if behind
+    if (chain.enabled && chain.reefWorld) {
+      try {
+        const onChainTick = Number(await chain.reefWorld.latestTick());
+        if (onChainTick > world.tick) {
+          console.log(`  Tick sync: server=${world.tick}, chain=${onChainTick} — advancing to chain`);
+          world.tick = onChainTick;
+        }
+      } catch (e) { console.error("  Silent error:", e.message?.slice(0, 100)); }
+    }
+
     console.log(`  DB: loaded ${world.agents.size} agents, ${world.tiles.size} tiles, tick ${world.tick}`);
   }
   if (world.agents.size === 0) {

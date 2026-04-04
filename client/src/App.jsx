@@ -50,7 +50,10 @@ export default function App() {
       })();
 
       if (savedId && state.agents[savedId]) {
-        // Agent ID still valid
+        // Agent ID still valid — claim socket ownership
+        if (savedWallet) {
+          s.emit('agent:claim', { agentId: savedId, walletAddress: savedWallet });
+        }
         return;
       }
 
@@ -65,6 +68,8 @@ export default function App() {
           localStorage.setItem('reef-agent-id', found.id);
           setShowWelcome(false);
           setShowJoin(false);
+          // Tell server which agent this socket owns
+          s.emit('agent:claim', { agentId: found.id, walletAddress: savedWallet });
           return;
         }
       }

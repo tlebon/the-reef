@@ -25,6 +25,31 @@ const REEF_REPUTATION_ABI = [
   'event RatingSubmitted(address indexed rater, address indexed agent, uint8 score)',
 ];
 
+const REEF_AGENT_ABI = [
+  'function mintAgent(address to, string agentName, string archetype, string ensName) external returns (uint256)',
+  'function setAvatar(uint256 tokenId, string avatarURI) external',
+  'function setDelegate(uint256 tokenId, address delegate) external',
+  'function getAgent(uint256 tokenId) view returns (string agentName, string archetype, string avatarURI, string ensName, address delegateWallet, uint256 mintedAt)',
+  'function agentOfOwner(address owner) view returns (uint256)',
+  'event AgentMinted(address indexed owner, uint256 indexed tokenId, string name, string archetype)',
+];
+
+const REEF_RESOURCE_ABI = [
+  'function mintResource(address to, uint256 resourceId, uint256 amount) external',
+  'function mintLoot(address to, string lootName, string rarity, uint256 resourceType) external returns (uint256)',
+  'function burnResource(address from, uint256 resourceId, uint256 amount) external',
+  'function burnLoot(address from, uint256 lootId) external',
+  'function balanceOf(address account, uint256 id) view returns (uint256)',
+  'event ResourceMinted(address indexed to, uint256 indexed tokenId, uint256 amount)',
+];
+
+const REEF_TILE_ABI = [
+  'function mintTile(address to, int256 x, int256 y, uint8 resourceType, string symbol) external returns (uint256)',
+  'function tileAtPosition(int256 x, int256 y) view returns (uint256)',
+  'function getTile(uint256 tokenId) view returns (int256 x, int256 y, uint8 resourceType, string symbol, uint256 mintedAt)',
+  'event TileMinted(address indexed owner, uint256 indexed tokenId, int256 x, int256 y, uint8 resourceType, string symbol)',
+];
+
 export class ChainConnector {
   constructor() {
     this.enabled = false;
@@ -32,6 +57,10 @@ export class ChainConnector {
     this.signer = null;
     this.reefWorld = null;
     this.reefReputation = null;
+    this.reefAgent = null;
+    this.reefResource = null;
+    this.reefTile = null;
+    this._txQueue = Promise.resolve(); // sequential transaction queue
   }
 
   /**
@@ -80,6 +109,14 @@ export class ChainConnector {
       this.reefWorld = new ethers.Contract(worldAddr, REEF_WORLD_ABI, this.signer);
       this.reefReputation = new ethers.Contract(repAddr, REEF_REPUTATION_ABI, this.signer);
 
+      // New contracts (optional — graceful if not configured)
+      const agentAddr = process.env.REEF_AGENT_ADDRESS;
+      const resourceAddr = process.env.REEF_RESOURCE_ADDRESS;
+      const tileAddr = process.env.REEF_TILE_ADDRESS;
+      if (agentAddr) this.reefAgent = new ethers.Contract(agentAddr, REEF_AGENT_ABI, this.signer);
+      if (resourceAddr) this.reefResource = new ethers.Contract(resourceAddr, REEF_RESOURCE_ABI, this.signer);
+      if (tileAddr) this.reefTile = new ethers.Contract(tileAddr, REEF_TILE_ABI, this.signer);
+
       const network = await this.provider.getNetwork();
       const latestTick = await this.reefWorld.latestTick();
       const agentCount = await this.reefReputation.getAgentCount();
@@ -87,6 +124,7 @@ export class ChainConnector {
       console.log(`  Chain: connected to ${network.name} (chainId: ${network.chainId})`);
       console.log(`  ReefWorld: ${worldAddr} (latestTick: ${latestTick})`);
       console.log(`  ReefReputation: ${repAddr} (agents: ${agentCount})`);
+      console.log(`  Contracts: Agent=${!!this.reefAgent} Resource=${!!this.reefResource} Tile=${!!this.reefTile}`);
 
       this.enabled = true;
     } catch (err) {
@@ -99,6 +137,16 @@ export class ChainConnector {
    * Query all registered agents from on-chain events.
    * Returns array of wallet addresses that have been registered.
    */
+  /**
+   * Queue a transaction to run sequentially — prevents nonce conflicts.
+   */
+  _enqueue(fn) {
+    this._txQueue = this._txQueue.then(fn).catch(err => {
+      console.error(`  Chain tx error: ${err.message?.slice(0, 100)}`);
+    });
+    return this._txQueue;
+  }
+
   async getRegisteredAgents() {
     if (!this.enabled) return [];
 
@@ -119,18 +167,14 @@ export class ChainConnector {
    */
   async commitTick(tickNumber, stateHash) {
     if (!this.enabled) return null;
-
-    try {
-      // Convert hex string hash to bytes32
+    return this._enqueue(async () => {
+      const nextTick = Number(await this.reefWorld.latestTick()) + 1;
       const hashBytes = '0x' + stateHash;
-      const tx = await this.reefWorld.commitTick(tickNumber, hashBytes);
+      const tx = await this.reefWorld.commitTick(nextTick, hashBytes);
       const receipt = await tx.wait();
-      console.log(`  Chain: tick ${tickNumber} committed (tx: ${receipt.hash})`);
+      console.log(`  Chain: tick ${nextTick} committed (tx: ${receipt.hash})`);
       return receipt;
-    } catch (err) {
-      console.error(`  Chain: failed to commit tick ${tickNumber} — ${err.message}`);
-      return null;
-    }
+    });
   }
 
   /**
@@ -138,16 +182,12 @@ export class ChainConnector {
    */
   async registerAgent(agentAddress) {
     if (!this.enabled) return null;
-
-    try {
+    return this._enqueue(async () => {
       const tx = await this.reefReputation.registerAgent(agentAddress);
       const receipt = await tx.wait();
       console.log(`  Chain: agent ${agentAddress} registered (tx: ${receipt.hash})`);
       return receipt;
-    } catch (err) {
-      console.error(`  Chain: failed to register agent — ${err.message}`);
-      return null;
-    }
+    });
   }
 
   /**
@@ -162,6 +202,57 @@ export class ChainConnector {
       return true;
     } catch (err) {
       console.error(`  Chain: failed to record transaction — ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Mint an agent NFT on-chain.
+   */
+  async mintAgentNFT(ownerAddress, name, archetype, ensName) {
+    if (!this.reefAgent) return null;
+    return this._enqueue(async () => {
+      const tx = await this.reefAgent.mintAgent(ownerAddress, name, archetype, ensName || '');
+      const receipt = await tx.wait();
+      console.log(`  Chain: minted agent NFT for ${ownerAddress.slice(0, 10)}...`);
+      return { txHash: receipt.hash };
+    });
+  }
+
+  /**
+   * Mint a tile NFT on-chain.
+   */
+  async mintTileNFT(ownerAddress, x, y, resourceType, symbol) {
+    if (!this.reefTile) return null;
+    const resourceMap = { coral: 0, crystal: 1, kelp: 2, shell: 3 };
+    const resId = typeof resourceType === 'string' ? (resourceMap[resourceType] ?? 0) : resourceType;
+    return this._enqueue(async () => {
+      const tx = await this.reefTile.mintTile(ownerAddress, x, y, resId, symbol || '#');
+      const receipt = await tx.wait();
+      console.log(`  Chain: minted tile NFT at (${x},${y}) for ${ownerAddress.slice(0, 10)}...`);
+      return { txHash: receipt.hash };
+    });
+  }
+
+  /**
+   * Sign a resource claim for a user (they submit it on-chain themselves).
+   */
+  async signResourceClaim(toAddress, ids, amounts, nonce, deadline) {
+    if (!this.signer || !this.reefResource) return null;
+
+    try {
+      const contractAddr = await this.reefResource.getAddress();
+      const network = await this.provider.getNetwork();
+      const hash = ethers.keccak256(
+        ethers.AbiCoder.defaultAbiCoder().encode(
+          ['address', 'uint256[]', 'uint256[]', 'uint256', 'uint256', 'uint256', 'address'],
+          [toAddress, ids, amounts, nonce, deadline, network.chainId, contractAddr]
+        )
+      );
+      const signature = await this.signer.signMessage(ethers.getBytes(hash));
+      return { signature, nonce, deadline };
+    } catch (err) {
+      console.error(`  Chain: failed to sign resource claim — ${err.message}`);
       return null;
     }
   }
