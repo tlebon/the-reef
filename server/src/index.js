@@ -14,6 +14,7 @@ import { World } from './world.js';
 import { ChainConnector } from './chain.js';
 import { seedWorld, tickNPCs, createAgentQuests } from './seed.js';
 import { checkQuests } from './quests.js';
+import { ENSManager } from './ens.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -32,6 +33,7 @@ const io = new Server(httpServer, {
 
 const world = new World();
 const chain = new ChainConnector();
+const ens = new ENSManager();
 
 // ── REST API ─────────────────────────────────────────────────────────
 
@@ -55,7 +57,7 @@ app.get('/api/agents', (req, res) => {
 app.get('/api/agents/:id', (req, res) => {
   const agent = world.getAgent(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
-  res.json(agent);
+  res.json({ ...agent, ensName: ens.getSubname(agent.name) });
 });
 
 app.get('/api/bounties', (req, res) => {
@@ -154,6 +156,10 @@ io.on('connection', (socket) => {
         socket.emit('quest:completed', completed);
       }
 
+      // Register ENS subname
+      const ensResult = await ens.registerSubname(name, walletAddress, { archetype });
+      result.agent.ensName = ensResult.ensName;
+
       // Register on-chain if wallet address provided
       if (walletAddress) {
         await chain.registerAgent(walletAddress);
@@ -228,6 +234,7 @@ function processTick(blockNumber) {
 
 async function start() {
   await chain.init();
+  await ens.init();
 
   // Load saved state or seed fresh
   const loaded = world.load(SAVE_PATH);
@@ -253,6 +260,7 @@ async function start() {
   │  WebSocket:   ws://localhost:${PORT}   │
   │  Ticks: ${blockSync ? 'synced to blocks' : `${TICK_INTERVAL / 1000}s interval`}          │
   │  Chain: ${chain.enabled ? 'connected' : 'local-only'}             │
+  │  ENS: ${ens.enabled ? ens.parentName : 'disabled'}                │
   └─────────────────────────────────────┘
     `);
   });
