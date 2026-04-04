@@ -21,9 +21,14 @@ const BASE_URL = process.env.REEF_SERVER || 'http://localhost:3001';
 function authHeaders() {
   const sig = process.env.REEF_WALLET_SIGNATURE;
   const msg = process.env.REEF_WALLET_MESSAGE;
+  if (!sig || !msg) {
+    throw new Error(
+      'Missing required auth env vars: REEF_WALLET_SIGNATURE and REEF_WALLET_MESSAGE must both be set'
+    );
+  }
   const headers = { 'Content-Type': 'application/json' };
-  if (sig) headers['x-wallet-signature'] = sig;
-  if (msg) headers['x-wallet-message'] = msg;
+  headers['x-wallet-signature'] = sig;
+  headers['x-wallet-message'] = msg;
   return headers;
 }
 
@@ -95,7 +100,8 @@ export const tools = [
       required: ['wallet'],
     },
     async execute({ wallet, symbol }) {
-      return agentAction(wallet, `BUILD ${symbol || '#'}`);
+      const safeSymbol = (symbol || '#').replace(/[^a-zA-Z0-9#@!&*~]/g, '');
+      return agentAction(wallet, `BUILD ${safeSymbol || '#'}`);
     },
   },
   {
@@ -143,7 +149,10 @@ export const tools = [
       required: ['wallet', 'target', 'give_resource', 'give_amount', 'want_resource', 'want_amount'],
     },
     async execute({ wallet, target, give_resource, give_amount, want_resource, want_amount }) {
-      return agentAction(wallet, `TRADE ${target} ${give_resource} ${give_amount} ${want_resource} ${want_amount}`);
+      const safeTarget = target.replace(/[^a-zA-Z0-9_-]/g, '');
+      const safeGiveResource = give_resource.replace(/[^a-z]/g, '');
+      const safeWantResource = want_resource.replace(/[^a-z]/g, '');
+      return agentAction(wallet, `TRADE ${safeTarget} ${safeGiveResource} ${give_amount} ${safeWantResource} ${want_amount}`);
     },
   },
   {
@@ -158,7 +167,8 @@ export const tools = [
       required: ['wallet', 'resource'],
     },
     async execute({ wallet, resource }) {
-      return agentAction(wallet, `REST ${resource}`);
+      const safeResource = resource.replace(/[^a-z]/g, '');
+      return agentAction(wallet, `REST ${safeResource}`);
     },
   },
   {
@@ -175,7 +185,8 @@ export const tools = [
       required: ['wallet', 'name', 'price', 'description'],
     },
     async execute({ wallet, name, price, description }) {
-      return agentAction(wallet, `REGISTER_SERVICE ${name} ${price} ${description}`);
+      const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '');
+      return agentAction(wallet, `REGISTER_SERVICE ${safeName} ${price} ${description}`);
     },
   },
   {
@@ -192,9 +203,11 @@ export const tools = [
       required: ['wallet', 'agent_name', 'service_name'],
     },
     async execute({ wallet, agent_name, service_name, args }) {
+      const safeAgentName = agent_name.replace(/[^a-zA-Z0-9_-]/g, '');
+      const safeServiceName = service_name.replace(/[^a-zA-Z0-9_-]/g, '');
       const cmd = args
-        ? `INVOKE_SERVICE ${agent_name} ${service_name} ${args}`
-        : `INVOKE_SERVICE ${agent_name} ${service_name}`;
+        ? `INVOKE_SERVICE ${safeAgentName} ${safeServiceName} ${args}`
+        : `INVOKE_SERVICE ${safeAgentName} ${safeServiceName}`;
       return agentAction(wallet, cmd);
     },
   },
@@ -242,7 +255,8 @@ export const tools = [
       required: ['wallet', 'agent_name', 'score'],
     },
     async execute({ wallet, agent_name, score }) {
-      return agentAction(wallet, `RATE ${agent_name} ${score}`);
+      const safeAgentName = agent_name.replace(/[^a-zA-Z0-9_-]/g, '');
+      return agentAction(wallet, `RATE ${safeAgentName} ${score}`);
     },
   },
 ];

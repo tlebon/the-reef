@@ -69,6 +69,9 @@ socket.on('agent:error', async ({ error }) => {
     const msg = `Sign in to The Reef\nWallet: ${WALLET}\nTimestamp: ${Date.now()}`;
     const sig = await wallet.signMessage(msg);
     socket.emit('agent:register', { name: newName, archetype: BOT_ARCHETYPE, walletAddress: WALLET, signature: sig, message: msg });
+  } else {
+    console.error(`[bot] Fatal registration error: ${error}`);
+    process.exit(1);
   }
 });
 
