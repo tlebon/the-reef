@@ -193,24 +193,41 @@ io.on('connection', (socket) => {
 
   // Agent command
   socket.on('agent:command', async ({ agentId, command }) => {
-    // Execute command first
-    const result = world.execute(agentId, command);
-
-    // Process payment AFTER successful service invocation
-    if (result.ok && result.service && result.service.price > 0) {
-      const parts = command.trim().split(/\s+/);
+    // For paid service invocations: check balance → execute → deduct
+    const parts = command.trim().split(/\s+/);
+    if (parts[0]?.toUpperCase() === 'INVOKE_SERVICE' && parts.length >= 3) {
       const targetName = parts[1];
+      const serviceName = parts[2];
       const target = [...world.agents.values()].find(a => a.name === targetName);
-      if (target) {
-        const payResult = await payments.processPayment(agentId, target.id, result.service.price, result.service.name);
-        if (payResult.error) {
-          result.paymentError = payResult.error;
-        } else {
-          result.payment = payResult;
+      const service = target?.services.find(s => s.name === serviceName);
+
+      if (service && service.price > 0) {
+        // Step 1: Check balance
+        const balance = payments.getBalance(agentId);
+        if (balance < service.price) {
+          socket.emit('agent:result', { command, result: { error: `Insufficient balance: have ${balance.toFixed(4)} USDC, need ${service.price} USDC` } });
+          return;
         }
+
+        // Step 2: Execute command
+        const result = world.execute(agentId, command);
+        if (!result.ok) {
+          socket.emit('agent:result', { command, result });
+          return;
+        }
+
+        // Step 3: Deduct payment (command succeeded)
+        const payResult = await payments.processPayment(agentId, target.id, service.price, serviceName);
+        result.payment = payResult;
+
+        socket.emit('agent:result', { command, result });
+        io.emit('world:update', world.getState());
+        return;
       }
     }
 
+    // All other commands — no payment
+    const result = world.execute(agentId, command);
     socket.emit('agent:result', { command, result });
 
     // Check quest completion after every action
