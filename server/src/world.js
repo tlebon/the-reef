@@ -639,6 +639,7 @@ export class World {
     bounty.claimed = true;
     bounty.claimedBy = agent.name;
     bounty.claimedById = agent.id;
+    bounty.forAgentId = agent.id; // moves it to "Your quests" in the UI
 
     this._log(`${agent.name} claimed bounty: "${bounty.description}"`);
     return { ok: true, message: `Claimed bounty: "${bounty.description}"`, bounty };
