@@ -45,9 +45,9 @@ contract ReefAgent is ERC721, Ownable {
 
         uint256 tokenId = ++nextTokenId;
         agents[tokenId] = AgentData(agentName, archetype, "", ensName, block.timestamp);
-        agentOfOwner[to] = tokenId;
 
         _mint(to, tokenId);
+        // Set after _mint so _update doesn't see it during mint
         emit AgentMinted(to, tokenId, agentName, archetype);
         return tokenId;
     }
@@ -80,6 +80,11 @@ contract ReefAgent is ERC721, Ownable {
      * @notice Override transfer to update agentOfOwner mapping.
      */
     function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
+        // On transfer (not mint): reject if recipient already has an agent
+        // Mints are guarded by mintAgent's own require check
+        if (agents[tokenId].mintedAt > 0 && to != address(0) && agentOfOwner[to] != 0) {
+            revert("ReefAgent: recipient already has an agent");
+        }
         address from = super._update(to, tokenId, auth);
         if (from != address(0)) {
             agentOfOwner[from] = 0;

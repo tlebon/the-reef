@@ -172,6 +172,13 @@ describe("ReefAgent", function () {
     expect(await agent.agentOfOwner(user1.address)).to.equal(2);
   });
 
+  it("should reject transfer to wallet that already has an agent", async function () {
+    await agent.mintAgent(user1.address, "Alice", "builder", "alice.reef.eth");
+    await agent.mintAgent(user2.address, "Bob", "scout", "bob.reef.eth");
+    await expect(agent.connect(user1).transferFrom(user1.address, user2.address, 1))
+      .to.be.revertedWith("ReefAgent: recipient already has an agent");
+  });
+
   it("should reject non-owner mint", async function () {
     await expect(agent.connect(user1).mintAgent(user1.address, "Alice", "builder", "alice.reef.eth"))
       .to.be.revertedWithCustomError(agent, "OwnableUnauthorizedAccount");
