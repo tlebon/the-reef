@@ -59,16 +59,16 @@ export class ENSManager {
         this.resolver = new ethers.Contract(resolverAddr, PUBLIC_RESOLVER_ABI, this.signer);
       }
 
+      if (!this.registry) console.log('  ENS: warning — no registry address, subnode registration will be skipped');
+      if (!this.resolver) console.log('  ENS: warning — no resolver address, text records will be skipped');
+
       console.log(`  ENS: configured for ${ensName} (node: ${this.parentNode.slice(0, 16)}...)`);
-      this.enabled = true;
+      this.enabled = !!(this.registry || this.resolver);
     } catch (err) {
       console.error(`  ENS: failed to initialize — ${err.message}`);
     }
   }
 
-  /**
-   * Register a subname for an agent: {agentName}.reef.eth
-   */
   /**
    * Validate that a name is ENS-safe (lowercase alphanumeric + hyphens only).
    */
@@ -102,7 +102,7 @@ export class ENSManager {
       console.error(`  ENS: background registration failed for ${safeName} — ${err.message}`);
     });
 
-    return { ensName, onChain: true };
+    return { ensName, pending: true };
   }
 
   async _registerAsync(safeName, ownerAddress, metadata) {

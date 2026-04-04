@@ -144,6 +144,9 @@ io.on('connection', (socket) => {
       socket.emit('agent:error', result);
     } else {
       socket.agentId = result.agent.id;
+      // Set ENS name before emitting so clients see it
+      result.agent.ensName = ens.getSubname(name);
+
       socket.emit('agent:registered', result);
       io.emit('world:agent_joined', { agent: result.agent, tile: result.tile });
 
@@ -156,9 +159,8 @@ io.on('connection', (socket) => {
         socket.emit('quest:completed', completed);
       }
 
-      // Register ENS subname
-      const ensResult = await ens.registerSubname(name, walletAddress, { archetype });
-      result.agent.ensName = ensResult.ensName;
+      // Register ENS subname on-chain (fire and forget)
+      ens.registerSubname(name, walletAddress, { archetype });
 
       // Register on-chain if wallet address provided
       if (walletAddress) {
