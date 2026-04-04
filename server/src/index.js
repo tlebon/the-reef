@@ -102,17 +102,12 @@ app.get('/api/services/:agentName/:serviceName',
     if (middleware) {
       return middleware(req, res, next);
     }
-    // No Circle config — require server-side balance via wallet query param
-    const buyerWallet = req.query.wallet;
-    if (!buyerWallet) {
-      return res.status(402).json({ error: 'Payment required. Provide ?wallet= or configure Circle nanopayments.' });
-    }
-    const buyer = world.getAgentByWallet(buyerWallet);
-    if (!buyer || (buyer.balance || 0) < service.price) {
-      return res.status(402).json({ error: 'Insufficient balance' });
-    }
-    req.buyerAgent = buyer;
-    next();
+    // No Circle config — REST endpoint requires x402, return payment info
+    return res.status(402).json({
+      error: 'Payment required — configure CIRCLE_SELLER_ADDRESS for x402 nanopayments',
+      service: service.name,
+      price: service.price,
+    });
   },
   (req, res) => {
     const agent = [...world.agents.values()].find(a => a.name === req.params.agentName);
