@@ -1,29 +1,59 @@
 import React, { useState } from 'react';
 
-export default function BountyPanel({ bounties, myAgentId }) {
+export default function BountyPanel({ bounties, myAgentId, onCommand }) {
   const [collapsed, setCollapsed] = useState(false);
 
-  const active = bounties.filter(b => !b.completed && !b.claimed && (!b.forAgentId || b.forAgentId === myAgentId));
-  if (active.length === 0) return null;
+  const myQuests = bounties.filter(b => !b.completed && b.forAgentId === myAgentId);
+  const publicQuests = bounties.filter(b => !b.completed && !b.forAgentId && !b.claimed);
+  const total = myQuests.length + publicQuests.length;
+
+  if (total === 0) return null;
 
   return (
     <div style={styles.container}>
       <div style={styles.header} onClick={() => setCollapsed(!collapsed)}>
-        <h3 style={styles.title}>Quests ({active.length})</h3>
+        <h3 style={styles.title}>Quests ({total})</h3>
         <span style={styles.toggle}>{collapsed ? '+' : '-'}</span>
       </div>
-      {!collapsed && active.map(b => (
-        <div key={b.id} style={styles.bounty}>
-          <div style={styles.bountyRow}>
-            <span style={styles.bountyDesc}>{b.description}</span>
-            <span style={styles.bountyReward}>{b.reward} USDC</span>
-          </div>
-          <div style={styles.bountyMeta}>
-            <span style={styles.open}>Open</span>
-            <span style={styles.poster}>by {b.poster}</span>
-          </div>
-        </div>
-      ))}
+
+      {!collapsed && (
+        <>
+          {myQuests.length > 0 && (
+            <>
+              <div style={styles.sectionLabel}>Your quests</div>
+              {myQuests.map(b => (
+                <div key={b.id} style={styles.bounty}>
+                  <div style={styles.bountyRow}>
+                    <span style={styles.bountyDesc}>{b.description}</span>
+                    <span style={styles.bountyReward}>{b.reward} USDC</span>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {publicQuests.length > 0 && (
+            <>
+              <div style={styles.sectionLabel}>Public quests</div>
+              {publicQuests.map(b => (
+                <div key={b.id} style={styles.bounty}>
+                  <div style={styles.bountyRow}>
+                    <span style={styles.bountyDesc}>{b.description}</span>
+                    <span style={styles.bountyReward}>{b.reward} USDC</span>
+                  </div>
+                  <div style={styles.bountyMeta}>
+                    <button
+                      style={styles.claimBtn}
+                      onClick={() => onCommand(`CLAIM_BOUNTY ${b.id}`)}
+                    >Claim</button>
+                    <span style={styles.poster}>by {b.poster}</span>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -50,8 +80,16 @@ const styles = {
     fontSize: '1rem',
     fontFamily: 'monospace',
   },
+  sectionLabel: {
+    fontSize: '0.7rem',
+    color: '#3d4a5c',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    marginTop: '10px',
+    marginBottom: '4px',
+  },
   bounty: {
-    padding: '8px 0',
+    padding: '6px 0',
     borderBottom: '1px solid #0f1623',
   },
   bountyRow: {
@@ -74,11 +112,19 @@ const styles = {
   bountyMeta: {
     display: 'flex',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginTop: '4px',
     fontSize: '0.7rem',
   },
-  open: {
+  claimBtn: {
+    background: '#1a2035',
     color: '#00d4aa',
+    border: '1px solid #00d4aa40',
+    borderRadius: '3px',
+    padding: '2px 8px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontSize: '0.7rem',
   },
   poster: {
     color: '#3d4a5c',

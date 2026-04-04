@@ -187,7 +187,7 @@ export default function App() {
 
           {!selectedAgent && !selectedTile && !showJoin && (
             <>
-              <BountyPanel bounties={bounties} myAgentId={myAgentId} />
+              <BountyPanel bounties={bounties} myAgentId={myAgentId} onCommand={handleCommand} />
               <div style={styles.panel}>
                 <h3 style={styles.panelTitle}>Agents</h3>
                 {agents.length === 0 ? (
