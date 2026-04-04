@@ -105,6 +105,11 @@ contract ReefResource is ERC1155, Ownable {
         require(nonce == claimNonce[to], "ReefResource: invalid nonce");
         require(ids.length == amounts.length, "ReefResource: length mismatch");
 
+        // Only allow claiming base resources (0-3), not loot IDs
+        for (uint256 i = 0; i < ids.length; i++) {
+            require(ids[i] <= SHELL, "ReefResource: can only claim base resources");
+        }
+
         // Verify server signature (includes chain ID and contract address to prevent replay)
         bytes32 hash = keccak256(abi.encodePacked(to, ids, amounts, nonce, block.chainid, address(this)));
         bytes32 ethHash = hash.toEthSignedMessageHash();
@@ -124,6 +129,7 @@ contract ReefResource is ERC1155, Ownable {
      * @notice Burn resources (used for tile minting costs).
      */
     function burnResource(address from, uint256 resourceId, uint256 amount) external onlyOwner {
+        require(resourceId <= SHELL, "ReefResource: can only burn base resources");
         _burn(from, resourceId, amount);
         _totalSupply[resourceId] -= amount;
         emit ResourceBurned(from, resourceId, amount);
