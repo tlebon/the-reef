@@ -5,6 +5,7 @@
  * processes agent actions, and broadcasts state updates.
  */
 
+import crypto from 'crypto';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -78,7 +79,8 @@ io.on('connection', (socket) => {
   socket.emit('world:state', world.getState());
 
   // Agent registration
-  socket.on('agent:register', async ({ id, name, archetype, walletAddress }) => {
+  socket.on('agent:register', async ({ name, archetype, walletAddress }) => {
+    const id = `agent-${crypto.randomUUID()}`;
     const result = world.addAgent(id, name, archetype);
     if (result.error) {
       socket.emit('agent:error', result);

@@ -97,8 +97,7 @@ export default function App() {
     if (!socket) return;
     setJoining(true);
     addActivity(`Joining as ${name} (${archetype})...`);
-    const id = `agent-${Date.now()}`;
-    socket.emit('agent:register', { id, name, archetype });
+    socket.emit('agent:register', { name, archetype });
   };
 
   const handleCommand = (command) => {

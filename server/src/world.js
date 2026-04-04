@@ -25,11 +25,9 @@ const LOOT_NAMES = {
 };
 
 const RANDOM_QUEST_TEMPLATES = [
-  { desc: 'Deliver {amount} {resource} to tile ({x},{y})', type: 'deliver' },
-  { desc: 'Discover {amount} new tiles', type: 'explore' },
   { desc: 'Trade with {amount} different agents', type: 'trade' },
-  { desc: 'Build on a {resource} tile', type: 'build' },
   { desc: 'Collect {amount} {resource}', type: 'collect' },
+  { desc: 'Scavenge {amount} times', type: 'scavenge' },
 ];
 
 const ARCHETYPES = {
@@ -325,6 +323,10 @@ export class World {
     // First tile is free
     const isFirstTile = agent.tilesOwned === 0;
 
+    // Check energy first so resources aren't lost on failure
+    const energyCost = ARCHETYPES[agent.archetype].buildCost;
+    if (agent.energy < energyCost) return { error: `Not enough energy (need ${energyCost}, have ${agent.energy})` };
+
     if (!isFirstTile) {
       // Check resource costs
       const costs = World.TILE_MINT_COSTS[tile.resource] || {};
@@ -338,16 +340,13 @@ export class World {
         return { error: `Need resources to mint this ${tile.resource} tile: ${missing.join(', ')}` };
       }
 
-      // Deduct resources
+      // Deduct resources (safe — energy and resources both verified)
       for (const [res, amount] of Object.entries(costs)) {
         if (amount > 0) {
           agent.inventory[res] -= amount;
         }
       }
     }
-
-    const energyCost = ARCHETYPES[agent.archetype].buildCost;
-    if (agent.energy < energyCost) return { error: `Not enough energy (need ${energyCost}, have ${agent.energy})` };
 
     agent.energy -= energyCost;
     tile.built = true;
@@ -502,12 +501,7 @@ export class World {
 
     agent.services.splice(idx, 1);
 
-    // Remove from tile too
-    const tile = this.getTile(agent.services[0]?.tileX ?? agent.x, agent.services[0]?.tileY ?? agent.y);
-    if (tile) {
-      tile.services = tile.services.filter(s => !(s.agentId === agent.id && s.name === name));
-    }
-    // Also check all tiles for this service
+    // Remove from all tiles
     for (const t of this.tiles.values()) {
       t.services = (t.services || []).filter(s => !(s.agentId === agent.id && s.name === name));
     }
@@ -752,7 +746,9 @@ export class World {
 
   save(path) {
     const data = JSON.stringify(this.getState(), null, 2);
-    fs.writeFileSync(path, data);
+    fs.writeFile(path, data, (err) => {
+      if (err) console.error('  World: save failed —', err.message);
+    });
   }
 
   load(path) {
