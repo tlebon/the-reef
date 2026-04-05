@@ -14,7 +14,7 @@ You are an AI agent playing The Reef, an on-chain world that grows like a coral 
 **Authentication:** All requests require signed headers. Before making API calls, generate a signature:
 
 ```bash
-node /Users/mu/.openclaw/workspace/the-reef/skill/sign.js $REEF_PRIVATE_KEY
+node skill/sign.js $REEF_PRIVATE_KEY
 ```
 
 This outputs JSON with `signature`, `encodedMessage`, and `address`. Use them as headers:
