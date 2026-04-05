@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import InputModal from './InputModal';
 import { MODAL_CONFIGS, sanitizeInput } from './modalConfigs';
 
-export default function ActionBar({ agent, currentTile, messages, agents, onCommand }) {
+export default function ActionBar({ agent, currentTile, messages, agents, onCommand, wallet }) {
   const [showBuild, setShowBuild] = useState(false);
   const [buildSymbol, setBuildSymbol] = useState('#');
   const [modal, setModal] = useState(null);
+  const [claiming, setClaiming] = useState(false);
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -38,6 +39,8 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
 
   if (!agent) return null;
 
+  const nearby = agents.filter(a => a.id !== agent.id && a.x === agent.x && a.y === agent.y);
+
   const renderModal = () => {
     if (!modal) return null;
 
@@ -68,6 +71,7 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
         <span style={styles.name}>{agent.name}</span>
         <span style={styles.energy}>Energy: {agent.energy}{agent.energy > 20 ? ' (boosted)' : '/20'}</span>
         <span style={styles.pos}>({agent.x},{agent.y})</span>
+        {agent.delegateWallet && <span style={{ fontSize: '0.75rem', color: '#00d4aa' }} title={agent.delegateWallet}>AI linked</span>}
       </div>
 
       <div style={styles.actions}>
@@ -109,6 +113,12 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
               <button style={styles.actionBtn} onClick={() => setModal({ type: 'say' })}>Say</button>
               <button style={styles.actionBtn} onClick={() => setModal({ type: 'post-bounty' })}>Post bounty</button>
               <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
+              {nearby.length > 0 && (
+                <select style={styles.restSelect} value="" onChange={e => { if (e.target.value) setModal({ type: 'trade', ownerName: e.target.value }); }}>
+                  <option value="">Trade with... ({nearby.length})</option>
+                  {nearby.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                </select>
+              )}
             </>
           ) : currentTile && currentTile.built ? (
             // On someone else's tile — show their services
@@ -135,6 +145,12 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
               )}
               <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
               <button style={styles.actionBtn} onClick={() => setModal({ type: 'say' })}>Say</button>
+              {nearby.length > 0 && (
+                <select style={styles.restSelect} value="" onChange={e => { if (e.target.value) setModal({ type: 'trade', ownerName: e.target.value }); }}>
+                  <option value="">Trade with... ({nearby.length})</option>
+                  {nearby.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                </select>
+              )}
             </>
           ) : currentTile && !currentTile.built ? (
             // On an unbuilt tile
@@ -201,6 +217,42 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
               </span>
             ))}
           </div>
+        )}
+        {wallet?.type === 'metamask' && agent.inventory && Object.values(agent.inventory).some(v => v > 0) && (
+          <button
+            style={{ ...styles.actionBtn, fontSize: '0.65rem', opacity: claiming ? 0.5 : 1 }}
+            disabled={claiming}
+            onClick={async () => {
+              setClaiming(true);
+              try {
+                const { ethers } = await import('ethers');
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const signer = await provider.getSigner();
+                // Sign fresh message for REST auth (wallet.signature may be stale/missing after refresh)
+                const msg = `Sign in to The Reef\nAddress: ${wallet.address}\nTimestamp: ${Date.now()}`;
+                const sig = await signer.signMessage(msg);
+                const resp = await fetch(`/api/agent/${wallet.address}/claim`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'x-wallet-signature': sig, 'x-wallet-message': encodeURIComponent(msg) },
+                  body: JSON.stringify({}),
+                });
+                const claim = await resp.json();
+                if (claim.error) { alert(claim.error); return; }
+                const contract = new ethers.Contract(claim.contractAddress, [
+                  'function claimResources(address to, uint256[] ids, uint256[] amounts, uint256 nonce, uint256 deadline, bytes signature) external',
+                ], signer);
+                const tx = await contract.claimResources(wallet.address, claim.ids, claim.amounts, claim.nonce, claim.deadline, claim.signature);
+                await tx.wait();
+                alert('Resources claimed on-chain!');
+              } catch (err) {
+                alert(`Claim failed: ${err.message}`);
+              } finally {
+                setClaiming(false);
+              }
+            }}
+          >
+            {claiming ? 'Claiming...' : 'Claim on-chain'}
+          </button>
         )}
       </div>
       {messages && messages.length > 0 && (

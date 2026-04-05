@@ -164,6 +164,15 @@ export default function App() {
 
   const handleCommand = (command) => {
     if (!socket || !myAgentId) return;
+
+    // Special: delegate linking goes through its own socket event
+    if (command.startsWith('LINK_DELEGATE ')) {
+      const delegateWallet = command.split(' ')[1];
+      socket.emit('agent:link_delegate', { agentId: myAgentId, delegateWallet });
+      addActivity(`> Linking AI agent: ${delegateWallet.slice(0, 10)}...`);
+      return;
+    }
+
     addActivity(`> ${command}`);
     socket.emit('agent:command', { agentId: myAgentId, command });
   };
@@ -248,7 +257,14 @@ export default function App() {
         {myAgentId && (
           <span style={styles.myAgent}>
             {worldState.agents[myAgentId]?.name || myAgentId}
+            {worldState.agents[myAgentId]?.ensName && (
+              <span style={{ color: '#5f6d7e', fontSize: '0.75rem', marginLeft: '4px' }}>{worldState.agents[myAgentId].ensName}</span>
+            )}
             {wallet && <span style={styles.walletBadge}>{wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}</span>}
+            <button style={{ background: 'none', color: '#00d4aa', border: '1px solid #00d4aa', borderRadius: '3px', padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.75rem', marginLeft: '4px' }} onClick={() => {
+              const addr = prompt('Enter delegate wallet address for AI agent:', worldState.agents[myAgentId]?.delegateWallet || '');
+              if (addr) handleCommand(`LINK_DELEGATE ${addr}`);
+            }}>{worldState.agents[myAgentId]?.delegateWallet ? 'AI linked' : 'Link AI'}</button>
             <button style={styles.logoutBtn} onClick={() => { disconnect(); setMyAgentId(null); setShowWelcome(true); setShowJoin(false); }}>logout</button>
           </span>
         )}
@@ -328,6 +344,21 @@ export default function App() {
             </>
           )}
 
+          {worldState.messages && worldState.messages.length > 0 && (
+            <div style={styles.panel}>
+              <h3 style={styles.panelTitle}>Chat</h3>
+              <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                {worldState.messages.slice().reverse().map((m, i) => (
+                  <div key={i} style={{ fontSize: '0.75rem', padding: '2px 0', borderBottom: '1px solid #0f1623' }}>
+                    <span style={{ color: '#00d4aa', fontWeight: 600 }}>{m.from}</span>
+                    <span style={{ color: '#3d4a5c', marginLeft: '4px' }}>({m.x},{m.y})</span>
+                    <div style={{ color: '#c8d6e5', marginTop: '1px' }}>{m.text}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <ActivityFeed activities={activities} />
         </div>
       </div>
@@ -340,6 +371,7 @@ export default function App() {
           messages={worldState.messages}
           agents={agents}
           onCommand={handleCommand}
+          wallet={wallet}
         />
       )}
     </div>
@@ -381,6 +413,16 @@ const styles = {
     gap: '20px',
     fontSize: '0.85rem',
     color: '#5f6d7e',
+  },
+  topBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '8px 16px',
+    background: '#0a0e17',
+    borderBottom: '1px solid #1a2035',
+    fontSize: '0.8rem',
+    zIndex: 20,
   },
   mainWrapper: {
     display: 'flex',

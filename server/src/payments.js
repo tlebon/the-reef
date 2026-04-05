@@ -10,13 +10,19 @@
  * - agent.balance tracks USDC amounts in memory
  */
 
+import { ethers } from 'ethers';
 import { createGatewayMiddleware } from '@circle-fin/x402-batching/server';
+
+const SEPOLIA_USDC = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
+const ERC20_ABI = ['function balanceOf(address) view returns (uint256)'];
 
 export class PaymentManager {
   constructor(world) {
     this.world = world;
     this.enabled = false;
     this.gateway = null;
+    this.provider = null;
+    this.usdc = null;
   }
 
   async init() {
@@ -36,6 +42,17 @@ export class PaymentManager {
     } catch (err) {
       console.error(`  Payments: failed to init Circle — ${err.message}. Using ledger fallback.`);
     }
+
+    // Set up on-chain USDC balance reading
+    const rpcUrl = process.env.SEPOLIA_RPC_URL;
+    if (rpcUrl) {
+      try {
+        this.provider = new ethers.JsonRpcProvider(rpcUrl);
+        this.usdc = new ethers.Contract(SEPOLIA_USDC, ERC20_ABI, this.provider);
+      } catch (err) {
+        console.error(`  Payments: failed to connect USDC contract — ${err.message}`);
+      }
+    }
   }
 
   /**
@@ -53,6 +70,26 @@ export class PaymentManager {
   getBalance(agentId) {
     const agent = this.world.getAgent(agentId);
     return agent ? (agent.balance || 0) : 0;
+  }
+
+  /**
+   * Sync an agent's in-game balance from their on-chain USDC balance.
+   * Only updates if the on-chain balance is higher (doesn't claw back).
+   */
+  async syncBalance(agentId) {
+    const agent = this.world.getAgent(agentId);
+    if (!agent?.ownerWallet || !this.usdc) return;
+
+    try {
+      const raw = await this.usdc.balanceOf(agent.ownerWallet);
+      const onChain = Number(ethers.formatUnits(raw, 6)); // USDC has 6 decimals
+      if (onChain > (agent.balance || 0)) {
+        agent.balance = Math.round(onChain * 10000) / 10000;
+        console.log(`  Payments: synced ${agent.name} balance to ${agent.balance} USDC (on-chain)`);
+      }
+    } catch (err) {
+      // Silent fail — balance stays as-is
+    }
   }
 
   /**

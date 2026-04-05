@@ -13,8 +13,8 @@ export const sanitizeInput = (key, value) => {
   if (key === 'give' || key === 'want' || key === 'resource') {
     return value.replace(/[^a-z]/g, '');
   }
-  // Price/reward fields: digits and single decimal point only
-  if (key === 'price' || key === 'reward') {
+  // Numeric fields: digits and single decimal point only
+  if (key === 'price' || key === 'reward' || key === 'giveAmount' || key === 'wantAmount') {
     const stripped = value.replace(/[^0-9.]/g, '');
     const parts = stripped.split('.');
     return parts.length <= 2 ? stripped : parts[0] + '.' + parts.slice(1).join('');
@@ -48,18 +48,29 @@ export const MODAL_CONFIGS = {
     ],
     toCommand: (v) => v.desc ? `POST_BOUNTY ${v.reward || '0.01'} ${v.desc}` : null,
   },
+  'trade': (targetName) => ({
+    title: `Trade with ${targetName}`,
+    fields: [
+      { key: 'give', label: 'Give Resource', placeholder: 'Select resource', options: ['coral', 'crystal', 'kelp', 'shell'] },
+      { key: 'giveAmount', label: 'Give Amount', placeholder: '1', defaultValue: '1' },
+      { key: 'want', label: 'Want Resource', placeholder: 'Select resource', options: ['coral', 'crystal', 'kelp', 'shell'] },
+      { key: 'wantAmount', label: 'Want Amount', placeholder: '1', defaultValue: '1' },
+    ],
+    toCommand: (v) => (v.give && v.want) ? `TRADE ${targetName} ${v.give} ${v.giveAmount || 1} ${v.want} ${v.wantAmount || 1}` : null,
+  }),
   'exchange': (ownerName) => ({
     title: `Exchange with ${ownerName}`,
     fields: [
-      { key: 'give', label: 'Give Resource', placeholder: 'coral/crystal/kelp/shell' },
-      { key: 'want', label: 'Want Resource', placeholder: 'coral/crystal/kelp/shell' },
+      { key: 'give', label: 'Give Resource', placeholder: 'Select resource', options: ['coral', 'crystal', 'kelp', 'shell'] },
+      { key: 'want', label: 'Want Resource', placeholder: 'Select resource', options: ['coral', 'crystal', 'kelp', 'shell'] },
+      { key: 'giveAmount', label: 'Amount', placeholder: '1', defaultValue: '1' },
     ],
-    toCommand: (v) => (v.give && v.want) ? `INVOKE_SERVICE ${ownerName} exchange ${v.give} ${v.want}` : null,
+    toCommand: (v) => (v.give && v.want) ? `INVOKE_SERVICE ${ownerName} exchange ${v.give} ${v.want} ${v.giveAmount || 1}` : null,
   }),
   'combine': (ownerName) => ({
     title: `Combine with ${ownerName}`,
     fields: [
-      { key: 'resource', label: 'Resource', placeholder: 'coral/crystal/kelp/shell' },
+      { key: 'resource', label: 'Resource', placeholder: 'Select resource', options: ['coral', 'crystal', 'kelp', 'shell'] },
     ],
     toCommand: (v) => v.resource ? `INVOKE_SERVICE ${ownerName} combine ${v.resource}` : null,
   }),

@@ -145,7 +145,10 @@ export function cmdTrade(world, agent, args) {
   if (!target) return { error: `Agent '${targetName}' not found` };
 
   const dist = Math.abs(target.x - agent.x) + Math.abs(target.y - agent.y);
-  if (dist > 2) return { error: `${targetName} is too far away (distance: ${dist})` };
+  if (dist > 0) return { error: `${targetName} must be on the same tile` };
+
+  if (!RESOURCES.includes(giveRes)) return { error: `Unknown resource: ${giveRes}. Options: ${RESOURCES.join(', ')}` };
+  if (!RESOURCES.includes(wantRes)) return { error: `Unknown resource: ${wantRes}. Options: ${RESOURCES.join(', ')}` };
 
   if ((agent.inventory[giveRes] || 0) < giveAmt) return { error: `You don't have ${giveAmt} ${giveRes}` };
   if ((target.inventory[wantRes] || 0) < wantAmt) return { error: `${targetName} doesn't have ${wantAmt} ${wantRes}` };
@@ -288,14 +291,15 @@ export function cmdInvokeService(world, agent, args) {
 
 function handleNpcService(world, agent, npc, serviceName, args) {
   if (npc.id === 'npc-merchant' && serviceName === 'exchange') {
-    if (args.length < 2) return { ok: false, error: 'Usage: INVOKE_SERVICE Barnacle exchange <give_resource> <want_resource>' };
-    const [give, want] = args;
+    if (args.length < 2) return { ok: false, error: 'Usage: INVOKE_SERVICE Barnacle exchange <give_resource> <want_resource> [amount]' };
+    const [give, want, amountStr] = args;
+    const amount = Math.max(1, parseInt(amountStr) || 1);
     if (!RESOURCES.includes(give) || !RESOURCES.includes(want)) return { ok: false, error: `Unknown resource. Options: ${RESOURCES.join(', ')}` };
     if (give === want) return { ok: false, error: 'Cannot exchange same resource' };
-    if ((agent.inventory[give] || 0) < 1) return { ok: false, error: `You don't have any ${give}` };
-    agent.inventory[give] -= 1;
-    agent.inventory[want] = (agent.inventory[want] || 0) + 1;
-    return { ok: true, message: `Exchanged 1 ${give} for 1 ${want} with ${npc.name}` };
+    if ((agent.inventory[give] || 0) < amount) return { ok: false, error: `You don't have ${amount} ${give} (have ${agent.inventory[give] || 0})` };
+    agent.inventory[give] -= amount;
+    agent.inventory[want] = (agent.inventory[want] || 0) + amount;
+    return { ok: true, message: `Exchanged ${amount} ${give} for ${amount} ${want} with ${npc.name}` };
   }
 
   if (npc.id === 'npc-merchant' && serviceName === 'recharge') {

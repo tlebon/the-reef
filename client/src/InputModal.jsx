@@ -51,16 +51,30 @@ export default function InputModal({ title, fields, onConfirm, onCancel, sanitiz
         {fields.map((f, i) => (
           <div key={f.key} style={styles.field}>
             <label style={styles.label}>{f.label}</label>
-            <input
-              ref={i === 0 ? firstRef : undefined}
-              style={styles.input}
-              placeholder={f.placeholder || ''}
-              value={values[f.key]}
-              onChange={e => {
-                const val = sanitize ? sanitize(f.key, e.target.value) : e.target.value;
-                setValues(prev => ({ ...prev, [f.key]: val }));
-              }}
-            />
+            {f.options ? (
+              <select
+                ref={i === 0 ? firstRef : undefined}
+                style={styles.input}
+                value={values[f.key]}
+                onChange={e => setValues(prev => ({ ...prev, [f.key]: e.target.value }))}
+              >
+                <option value="">{f.placeholder || 'Select...'}</option>
+                {f.options.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                ref={i === 0 ? firstRef : undefined}
+                style={styles.input}
+                placeholder={f.placeholder || ''}
+                value={values[f.key]}
+                onChange={e => {
+                  const val = sanitize ? sanitize(f.key, e.target.value) : e.target.value;
+                  setValues(prev => ({ ...prev, [f.key]: val }));
+                }}
+              />
+            )}
           </div>
         ))}
 

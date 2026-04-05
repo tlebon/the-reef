@@ -146,7 +146,9 @@ app.get('/api/archetypes', (req, res) => {
 function verifyWalletAuth(req, res, next) {
   const walletAddress = req.params.walletAddress;
   const signature = req.headers['x-wallet-signature'];
-  const message = req.headers['x-wallet-message'];
+  const rawMessage = req.headers['x-wallet-message'];
+  // Decode URI-encoded message (newlines are invalid in HTTP headers)
+  const message = rawMessage ? decodeURIComponent(rawMessage) : rawMessage;
 
   if (!signature || !message) {
     return res.status(401).json({ error: 'Missing x-wallet-signature and x-wallet-message headers' });
@@ -182,6 +184,87 @@ function resolveAgentByWallet(req, res, next) {
   req.agent = agent;
   next();
 }
+
+// POST /api/agent/:walletAddress/claim — sign a resource claim for on-chain submission
+app.post('/api/agent/:walletAddress/claim', verifyWalletAuth, resolveAgentByWallet, async (req, res) => {
+  const agent = req.agent;
+  if (!agent.ownerWallet) {
+    return res.status(400).json({ error: 'Agent has no wallet — connect a wallet first' });
+  }
+
+  const resourceMap = { coral: 0, crystal: 1, kelp: 2, shell: 3 };
+  const ids = [];
+  const amounts = [];
+
+  // Read on-chain balances, mint positive deltas, burn negative deltas
+  const burns = [];
+  for (const [name, id] of Object.entries(resourceMap)) {
+    const inGame = agent.inventory?.[name] || 0;
+    let onChain = 0;
+    try {
+      if (chain.reefResource) {
+        onChain = Number(await chain.reefResource.balanceOf(agent.ownerWallet, id));
+      }
+    } catch { /* assume 0 */ }
+    const delta = inGame - onChain;
+    if (delta > 0) {
+      ids.push(id);
+      amounts.push(delta);
+    } else if (delta < 0) {
+      burns.push({ id, amount: Math.abs(delta), name });
+    }
+  }
+
+  if (ids.length === 0 && burns.length === 0) {
+    return res.status(400).json({ error: 'On-chain balances already match (nothing to sync)' });
+  }
+
+  // Read nonce from contract to prevent replay
+  let nonce = 0;
+  try {
+    if (chain.reefResource) {
+      nonce = Number(await chain.reefResource.claimNonce(agent.ownerWallet));
+      console.log(`  Claim: nonce for ${agent.ownerWallet.slice(0,10)}... = ${nonce}, minting ids=${ids} amounts=${amounts}, burns=${burns.length}`);
+    }
+  } catch (err) {
+    console.error(`  Claim: failed to read nonce — ${err.message}`);
+  }
+
+  // Sign the claim first — only burn after signing succeeds
+  const deadline = Math.floor(Date.now() / 1000) + 3600;
+  let claim = null;
+  if (ids.length > 0) {
+    claim = await chain.signResourceClaim(agent.ownerWallet, ids, amounts, nonce, deadline);
+    if (!claim) {
+      return res.status(503).json({ error: 'Chain signing unavailable — running in local mode' });
+    }
+  }
+
+  // Now burn excess on-chain resources (safe — signing succeeded or no mints needed)
+  for (const burn of burns) {
+    await chain._enqueue(async () => {
+      const tx = await chain.reefResource.burnResource(agent.ownerWallet, burn.id, burn.amount);
+      await tx.wait();
+      console.log(`  Chain: burned ${burn.amount} ${burn.name} from ${agent.ownerWallet.slice(0, 10)}...`);
+    });
+  }
+
+  // If only burns, return early
+  if (!claim) {
+    return res.json({ ok: true, burns, message: 'Burned excess on-chain resources to match in-game state' });
+  }
+
+  const nameById = { 0: 'coral', 1: 'crystal', 2: 'kelp', 3: 'shell' };
+  res.json({
+    ...claim,
+    ids,
+    amounts,
+    deadline,
+    burns: burns.length > 0 ? burns : undefined,
+    resources: Object.fromEntries(ids.map((id, i) => [nameById[id], amounts[i]])),
+    contractAddress: process.env.REEF_RESOURCE_ADDRESS || null,
+  });
+});
 
 // GET /api/agent/:walletAddress/state — full agent state including surroundings
 app.get('/api/agent/:walletAddress/state', verifyWalletAuth, resolveAgentByWallet, (req, res) => {
@@ -224,13 +307,29 @@ async function executeWithSideEffects(agentId, command) {
       }
       result.payment = payResult;
 
+      // Record on-chain reputation for paid service
       const agent = world.getAgent(agentId);
+      if (agent?.ownerWallet) chain.recordTransaction(agent.ownerWallet).catch(() => {});
+
       const completed = agent ? checkQuests(world, agent) : [];
       for (const q of completed) {
         if (q.reward > 0) payments.credit(agentId, q.reward, `Quest: ${q.description}`);
       }
       return { result, completed };
     }
+
+    // NPC service (no payment but still record transaction + execute)
+    const npcResult = world.execute(agentId, command);
+    if (npcResult.ok) {
+      const agent = world.getAgent(agentId);
+      if (agent?.ownerWallet) chain.recordTransaction(agent.ownerWallet).catch(() => {});
+      const completed = agent ? checkQuests(world, agent) : [];
+      for (const q of completed) {
+        if (q.reward > 0) payments.credit(agentId, q.reward, `Quest: ${q.description}`);
+      }
+      return { result: npcResult, completed };
+    }
+    return { result: npcResult };
   }
 
   // All other commands
@@ -340,6 +439,8 @@ io.on('connection', (socket) => {
       if (existing) {
         // Reconnect to existing agent
         socket.agentId = existing.id;
+        // Sync balance from on-chain USDC
+        payments.syncBalance(existing.id).catch(() => {});
         socket.emit('agent:registered', { agent: existing, tile: world.getTile(existing.x, existing.y) });
 
         // Mint NFT for existing agents that don't have one yet
@@ -389,6 +490,8 @@ io.on('connection', (socket) => {
       socket.emit('agent:error', result);
     } else {
       socket.agentId = result.agent.id;
+      // Sync balance from on-chain USDC
+      payments.syncBalance(result.agent.id).catch(() => {});
 
       socket.emit('agent:registered', result);
       io.emit('world:agent_joined', { agent: result.agent, tile: result.tile });
@@ -424,6 +527,7 @@ io.on('connection', (socket) => {
     const agent = world.getAgent(agentId);
     if (agent && agent.ownerWallet?.toLowerCase() === walletAddress?.toLowerCase()) {
       socket.agentId = agentId;
+      payments.syncBalance(agentId).catch(() => {});
       console.log(`  Claim: success — socket.agentId set to ${agentId}`);
 
       // Mint NFT if missing
@@ -523,6 +627,7 @@ async function start() {
       world.tiles.set(`${tile.x},${tile.y}`, tile);
     }
     world.bounties = loadBounties();
+    world.messages = getWorldMeta('messages') || [];
 
     // Sync tick with on-chain state if behind
     if (chain.enabled && chain.reefWorld) {

@@ -200,6 +200,7 @@ export function getWorldMeta(key) {
 export function saveWorldState(world) {
   const saveAll = db.transaction(() => {
     setWorldMeta('tick', world.tick);
+    setWorldMeta('messages', (world.messages || []).slice(-100));
 
     for (const agent of world.agents.values()) {
       saveAgent(agent);
