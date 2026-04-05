@@ -135,7 +135,7 @@ export function tickNPCs(world) {
     if (agent.inventory.shell < 20) agent.inventory.shell += 1;
 
     // NPCs occasionally say something to create atmosphere
-    if (world.tick % 10 === 0) {
+    if (world.tick % 100 === 0) {
       const lines = NPC_SAYINGS[npc.id] || [];
       if (lines.length > 0) {
         const line = lines[world.tick % lines.length];
