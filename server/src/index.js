@@ -145,13 +145,6 @@ app.get('/api/archetypes', (req, res) => {
 // The message must contain the wallet address and a recent timestamp.
 function verifyWalletAuth(req, res, next) {
   const walletAddress = req.params.walletAddress;
-
-  // Delegate wallets skip signature auth — they're pre-authorized by the owner
-  const agent = world.getAgentByWallet(walletAddress);
-  if (agent && agent.delegateWallet?.toLowerCase() === walletAddress.toLowerCase()) {
-    return next();
-  }
-
   const signature = req.headers['x-wallet-signature'];
   const rawMessage = req.headers['x-wallet-message'];
   // Decode URI-encoded message (newlines are invalid in HTTP headers)
