@@ -627,6 +627,7 @@ async function start() {
       world.tiles.set(`${tile.x},${tile.y}`, tile);
     }
     world.bounties = loadBounties();
+    world.messages = getWorldMeta('messages') || [];
 
     // Sync tick with on-chain state if behind
     if (chain.enabled && chain.reefWorld) {
