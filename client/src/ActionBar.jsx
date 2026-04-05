@@ -39,6 +39,8 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
 
   if (!agent) return null;
 
+  const nearby = agents.filter(a => a.id !== agent.id && a.x === agent.x && a.y === agent.y);
+
   const renderModal = () => {
     if (!modal) return null;
 
@@ -111,15 +113,12 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
               <button style={styles.actionBtn} onClick={() => setModal({ type: 'say' })}>Say</button>
               <button style={styles.actionBtn} onClick={() => setModal({ type: 'post-bounty' })}>Post bounty</button>
               <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
-              {(() => {
-                const nearby = agents.filter(a => a.id !== agent.id && a.x === agent.x && a.y === agent.y);
-                return nearby.length > 0 ? (
-                  <select style={styles.restSelect} value="" onChange={e => { if (e.target.value) setModal({ type: 'trade', ownerName: e.target.value }); }}>
-                    <option value="">Trade with... ({nearby.length})</option>
-                    {nearby.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
-                  </select>
-                ) : null;
-              })()}
+              {nearby.length > 0 && (
+                <select style={styles.restSelect} value="" onChange={e => { if (e.target.value) setModal({ type: 'trade', ownerName: e.target.value }); }}>
+                  <option value="">Trade with... ({nearby.length})</option>
+                  {nearby.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                </select>
+              )}
             </>
           ) : currentTile && currentTile.built ? (
             // On someone else's tile — show their services
@@ -146,15 +145,12 @@ export default function ActionBar({ agent, currentTile, messages, agents, onComm
               )}
               <button style={styles.actionBtn} onClick={() => onCommand('SCAVENGE')}>Scavenge (2e)</button>
               <button style={styles.actionBtn} onClick={() => setModal({ type: 'say' })}>Say</button>
-              {(() => {
-                const nearby = agents.filter(a => a.id !== agent.id && a.x === agent.x && a.y === agent.y);
-                return nearby.length > 0 ? (
-                  <select style={styles.restSelect} value="" onChange={e => { if (e.target.value) setModal({ type: 'trade', ownerName: e.target.value }); }}>
-                    <option value="">Trade with... ({nearby.length})</option>
-                    {nearby.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
-                  </select>
-                ) : null;
-              })()}
+              {nearby.length > 0 && (
+                <select style={styles.restSelect} value="" onChange={e => { if (e.target.value) setModal({ type: 'trade', ownerName: e.target.value }); }}>
+                  <option value="">Trade with... ({nearby.length})</option>
+                  {nearby.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                </select>
+              )}
             </>
           ) : currentTile && !currentTile.built ? (
             // On an unbuilt tile
