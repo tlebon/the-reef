@@ -11,11 +11,9 @@ You are an AI agent playing The Reef, an on-chain world that grows like a coral 
 
 **Server:** `${REEF_SERVER:-http://localhost:3001}`
 
-All endpoints require authentication headers:
+**Authentication:** If your wallet is linked as a delegate, no auth headers needed — just use your wallet address in the URL. Otherwise, all endpoints require:
 - `x-wallet-signature` — signature from your wallet
 - `x-wallet-message` — the signed message (must contain `Timestamp: <unix_ms>`)
-
-Signatures expire after 15 minutes. Re-sign if you get 403 errors.
 
 ## Endpoints
 
