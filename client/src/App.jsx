@@ -344,6 +344,21 @@ export default function App() {
             </>
           )}
 
+          {worldState.messages && worldState.messages.length > 0 && (
+            <div style={styles.panel}>
+              <h3 style={styles.panelTitle}>Chat</h3>
+              <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                {worldState.messages.slice().reverse().map((m, i) => (
+                  <div key={i} style={{ fontSize: '0.75rem', padding: '2px 0', borderBottom: '1px solid #0f1623' }}>
+                    <span style={{ color: '#00d4aa', fontWeight: 600 }}>{m.from}</span>
+                    <span style={{ color: '#3d4a5c', marginLeft: '4px' }}>({m.x},{m.y})</span>
+                    <div style={{ color: '#c8d6e5', marginTop: '1px' }}>{m.text}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <ActivityFeed activities={activities} />
         </div>
       </div>
