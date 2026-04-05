@@ -13,7 +13,7 @@ import KeyModal from './KeyModal.jsx';
 
 const SOCKET_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3001'
-  : `http://${window.location.hostname}:3001`;
+  : window.location.origin;
 
 export default function App() {
   const [socket, setSocket] = useState(null);

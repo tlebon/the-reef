@@ -29,6 +29,10 @@ const TICK_INTERVAL = parseInt(process.env.TICK_INTERVAL) || 6_000; // 6s (half 
 const app = express();
 app.use(express.json());
 
+// Serve client build in production
+const clientDist = join(__dirname, '..', '..', 'client', 'dist');
+app.use(express.static(clientDist));
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: '*' },
@@ -679,6 +683,14 @@ async function start() {
       processTick(null);
     }
   }, TICK_INTERVAL);
+
+  // SPA fallback — serve index.html for non-API routes
+  app.get('*', (req, res) => {
+    const indexPath = join(clientDist, 'index.html');
+    res.sendFile(indexPath, (err) => {
+      if (err) res.status(404).send('Not found');
+    });
+  });
 
   httpServer.listen(PORT, () => {
     console.log(`
